@@ -1,4 +1,4 @@
-# Valor
+# Valor `(v)`
 
 Simple, minimal and easy to use Haskell validation library that gives you the
 full control over how you handle your data types.
