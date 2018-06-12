@@ -1,12 +1,6 @@
-<span
-	style="
-	display: block;
-	font-size: 30px;
-	text-align: center;
-	font-family: Consolas, monospace;
-	"
->(v)</span>
-# Valor `(v)`
+<img src="valor-logo.svg" alt="Valor Logo">
+
+# Valor
 
 Simple, minimal and easy to use Haskell validation library that gives you the
 full control over how you handle your data types.
