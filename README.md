@@ -1,4 +1,4 @@
-<img src="valor-logo.svg" alt="Valor Logo">
+![Valor Logo](/valor-logo.svg?raw=true "Valor")
 
 # Valor
 
