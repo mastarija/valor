@@ -29,6 +29,7 @@ description:
 dependencies:
 - base >= 4.7 && < 5
 - text
+- transformers
 
 library:
   source-dirs:
@@ -46,3 +47,7 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - valor
+    - hspec
+    - QuickCheck
+    - checkers
+    - hspec-checkers
