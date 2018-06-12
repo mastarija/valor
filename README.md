@@ -1,4 +1,4 @@
-<p align="center">![Valor Logo](/valor-logo.svg "Valor")</p>
+![Valor Logo](/valor-logo.svg "Valor")
 
 # Valor
 
