@@ -1,4 +1,11 @@
-![Valor Logo](/valor-logo.svg "Valor")
+<p align="center">
+	<img
+		src="/reygoch/valor/raw/master/valor-logo.svg?sanitize=true"
+		alt="Valor Logo"
+		title="Valor"
+		style="max-width:100%;"
+	>
+</p>
 
 # Valor
 
