@@ -1,6 +1,6 @@
 <p align="center">
 	<img
-		src="/reygoch/valor/raw/master/valor-logo.svg?sanitize=true"
+		src="valor-logo.svg?sanitize=true"
 		alt="Valor Logo"
 		title="Valor"
 		style="max-width:100%;"
