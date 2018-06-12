@@ -5,8 +5,8 @@ full control over how you handle your data types.
 
 ## Motivation
 
-There are a few validation libraries out there, most notably [`forma`] [forma]
-and [`digestive-functors`] [digestive]. The problem I have with those is that
+There are a few validation libraries out there, most notably [forma] [forma]
+and [digestive-functors] [digestive]. The problem I have with those is that
 they are all either too speciffic or too complicated for my taste.
 
 `digestive-functor`s use custom types to validate form and they even try to
@@ -14,7 +14,7 @@ handle the view generation. They are also more suited for `HTML` form validation
 and rendering.
 
 `forma` on the other hand doesn't try to do the rendering for me but it plays a
-role of a `JSON` parser and forces me to use [`Value`] [aeson-value] as the type
+role of a `JSON` parser and forces me to use [Value] [aeson-value] as the type
 of data that I want to validate.
 
 This might be acceptable if you are just doing some web development but if you
@@ -22,7 +22,7 @@ are doing some analysis and want to find out how much of the data fits your
 requirements and than reformat it based on resulting errors than it can become
 annoying to marshal you data to and from `JSON` format.
 
-I'm also not satisfied how this looks in combination with [`servant`] [servant].
+I'm also not satisfied how this looks in combination with [servant] [servant].
 Usually we would do something like this:
 
 ```
