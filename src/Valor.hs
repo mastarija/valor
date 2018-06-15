@@ -1,15 +1,20 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 --
 module Valor where
 --
-import Data.Semigroup
+import Data.Semigroup ( Semigroup, (<>) )
 import Control.Applicative ( liftA2 )
-import Control.Monad.Trans.Except
+import Control.Monad.Trans.Except ( ExceptT, runExceptT )
+import Data.Functor.Identity ( Identity (..) )
 --
+
+data Validate a
+
+type family Validatable a e x where
+  Validatable Validate e x = Maybe e
+  Validatable Identity e x = x
 
 --------------------------------------------------------------------------------
 
@@ -51,29 +56,17 @@ instance Applicative m => Applicative (Validator i m) where
 
 --------------------------------------------------------------------------------
 
-validator :: (Functor m, Monoid e)
-  => (i -> ExceptT e m i)
-  -> Validator i m e
-validator chk = Validator $ \i ->
-  either Invalid (const $ Valid mempty) <$> (runExceptT $ chk i)
+validate :: (Functor m) => Validator i m e -> i -> m (Maybe e)
+validate (Validator v) i = helper <$> v i
+  where
+    helper :: Validated e -> Maybe e
+    helper (Invalid e) = Just e
+    helper _           = Nothing
 
---
+validatePure :: Validator i Identity e -> i -> Maybe e
+validatePure v i = runIdentity $ validate v i
 
-fieldCheck :: forall i x m e. (Functor m, Monoid e)
-  => (i -> x)
-  -> (x -> ExceptT e m x)
-  -> Validator i m (Maybe e)
-fieldCheck sel chk = mconvert $ Validator $ unValidator (validator chk) . sel
-
---
-
-fieldChecks :: forall i x m e. ( Applicative m, Monoid e, Semigroup e )
-  => (i -> x)
-  -> [x -> ExceptT e m x]
-  -> Validator i m (Maybe e)
-fieldChecks sel chks = foldr1 (<>) $ fmap (fieldCheck sel) chks
-
---
+--------------------------------------------------------------------------------
 
 converter
   :: forall i m e e'. Functor m
@@ -95,6 +88,32 @@ mconvert = converter (const Nothing) Just
 
 --
 
+validator :: (Functor m, Monoid e)
+  => (i -> ExceptT e m x)
+  -> Validator i m e
+validator chk = Validator $ \i ->
+  either Invalid (const $ Valid mempty) <$> (runExceptT $ chk i)
+
+--
+skip :: Applicative m => Validator i m (Maybe e)
+skip = Validator $ \_ -> pure $ Valid Nothing
+
+check :: forall i x m e. (Functor m, Monoid e)
+  => (i -> x)
+  -> (x -> ExceptT e m x)
+  -> Validator i m (Maybe e)
+check sel chk = mconvert $ Validator $ unValidator (validator chk) . sel
+
+--
+
+checks :: forall i x m e. ( Applicative m, Monoid e, Semigroup e )
+  => (i -> x)
+  -> [x -> ExceptT e m x]
+  -> Validator i m (Maybe e)
+checks sel chks = foldr1 (<>) $ fmap (check sel) chks
+
+--
+
 enterField :: forall i x m e. (Functor m)
   => (i -> x)
   -> Validator x m e
@@ -102,65 +121,3 @@ enterField :: forall i x m e. (Functor m)
 enterField sel (Validator x) = mconvert $ Validator $ \i -> x $ sel i
 
 --------------------------------------------------------------------------------
-
-data Form = Form
-  { age  :: Int
-  , user :: User
-  } deriving ( Show )
-
-data FormError = FormError
-  { age :: Maybe [String]
-  , user :: Maybe UserError
-  } deriving ( Show )
-
-data User = User
-  { username :: String
-  , password :: String
-  } deriving ( Show )
-
-data UserError = UserError
-  { username :: Maybe [String]
-  , password :: Maybe [String]
-  } deriving ( Show )
-
-badUser :: User
-badUser = User "shit" ""
-
-goodUser :: User
-goodUser = User "squeaky" "clean"
-
-badForm :: Form
-badForm = Form 12 badUser
-
-partiallyBadForm :: Form
-partiallyBadForm = Form 12 goodUser
-
-formValidator :: Monad m => Validator Form m FormError
-formValidator = FormError
-  <$> fieldCheck @Form age over18
-  <*> enterField @Form user userValidator
-
-userValidator :: Monad m => Validator User m UserError
-userValidator = UserError
-  <$> fieldChecks @User username [nonempty, nonshit, nonshort]
-  <*> fieldChecks @User password [nonempty]
-
-over18 :: Monad m => Int -> ExceptT [String] m Int
-over18 age
-  | age < 18 = throwE ["fuck off kiddo"]
-  | otherwise = pure age
-
-nonempty :: Monad m => String -> ExceptT [String] m String
-nonempty s
-  | length s == 0 = throwE ["can't be empty"]
-  | otherwise     = pure s
-
-nonshit :: Monad m => String -> ExceptT [String] m String
-nonshit s
-  | s == "shit" = throwE ["can't be shit"]
-  | otherwise   = pure s
-
-nonshort :: Monad m => String -> ExceptT [String] m String
-nonshort s
-  | length s <= 4 = throwE ["must have min 5 letters"]
-  | otherwise     = pure s
