@@ -1,11 +1,11 @@
-module ValorSpec where
+module Data.ValorSpec where
 --
 import Test.Hspec
 import Test.Hspec.Checkers ( testBatch )
 import Test.QuickCheck
 import Test.QuickCheck.Classes ( semigroup )
 
-import Valor
+import Data.Valor
 import Data.Text ( Text )
 --
 
