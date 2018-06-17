@@ -71,7 +71,7 @@ so let's define some:
 
 ```haskell
 data Article = Article
-  { id      :: Maybe Int
+  { id      :: Int
   , title   :: String
   , content :: String
   , tags    :: [String]
@@ -215,7 +215,53 @@ and other instances.
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 ```
+---
 
+Now we can start working on validators for our data types. First thing we have
+to do is define some basic checks. 
+
+```haskell
+over18 :: Monad m => Int -> ExceptT String m Int
+over18 n
+  | n < 18    = throwE "must be over 18"
+  | otherwise = pure n
+
+nonempty :: Monad m => String -> ExceptT [String] m String
+nonempty s
+  | length s == 0 = throwE ["can't be empty"]
+  | otherwise     = pure s
+
+nonbollocks :: Monad m => String -> ExceptT [String] m String
+nonbollocks s
+  | s == "bollocks" = throwE ["can't be bollocks"]
+  | otherwise       = pure s
+```
+
+With this we can construct our validators for `User` and `Article`:
+
+```haskell
+userValidator :: Monad m => Validator User m UserError
+userValidator = User
+  <$> checks username [nonempty, nonbollocks]
+```
+
+With this we are saying that `User`s `username` should not be empty or
+`"bollocks"`. In case you are using `DuplicateRecordFields` extension you can
+use type applications to make `username` selector more speciffic e.g.:
+
+```haskell
+userValidator :: Monad m => Validator User m UserError
+userValidator = User
+  <$> checks @User username [nonempty, nonbollocks]
+```
+
+---
+
+Let's try to define "more complicated" `Article` validator:
+
+```haskell
+
+```
 
 [1]: https://hackage.haskell.org/package/forma
 [2]: https://hackage.haskell.org/package/digestive-functors
