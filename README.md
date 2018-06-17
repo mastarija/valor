@@ -184,8 +184,9 @@ applied to the regular value type.
 
 ---
 
-With all that in mind, remember that you don't have to use `Validatable` and you
-are free to define your own type family in case you have some other usecase.
+> With all that in mind, remember that you don't have to use `Validatable` and
+> you are free to define your own type family in case you have some other
+> usecase.
 
 ---
 
