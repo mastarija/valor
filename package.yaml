@@ -1,7 +1,7 @@
 name:
     valor
 version:
-    0.1.0.0
+    0.0.0.0
 github:
     "reygoch/valor"
 license:
@@ -15,10 +15,11 @@ copyright:
 
 extra-source-files:
 - README.md
+- ChangeLog.md
 
 # Metadata used when publishing your package
-# synopsis:            Short description of your package
-# category:            Web
+category: Validation
+synopsis: Simple general structured validation library
 
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
