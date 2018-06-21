@@ -1,3 +1,5 @@
+![valor-build-status](https://api.travis-ci.org/reygoch/valor.svg?branch=master)
+
 <p align="center">
 	<img
 		src="valor-logo.svg?sanitize=true"
