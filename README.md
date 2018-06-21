@@ -64,6 +64,112 @@ In no particular order here are the main problems I have with them:
   longer in the JSON form and library like [forma][1] is not of much use to us
   unless we convert `SomeData` to JSON and parse it once again.
 
+---
+
+## Tutorial
+
+This module provides a general way for validating data. It was inspired by
+`forma` and `digestive-functors` and some of their shortcomings.
+In short, approach taken by the Valor is to try and parse the error from the
+data instead of data from some fixed structured format like the JSON.
+
+Main feature of Valor is that you are not forced to use specific input type
+like JSON, or to use specific output type like `digestive-functors` `View`.
+You can use what ever you like as an input and use custom error type as the
+output (although it does have to follow a specific format).
+
+To use Valor you first need to have some "input" data type that you want to
+validate and an "error" data type that will store validation errors of your
+data. Although the "shapes" of your input and error data types can differ, in
+the most common use case your input and error would be of the same shape.
+
+Here is an example:
+
+```haskell
+import Data.Valor
+--
+data Article = Article
+  { id      :: Int
+  , title   :: String
+  , content :: String
+  , tags    :: [String]
+  , author  :: User
+  } deriving ( Show )
+
+data ArticleError = ArticleError
+  { id      :: Maybe String           -- ^ here I've intended for 'id' to have only one error message
+  , title   :: Maybe [String]         -- ^ for 'title' field there might be many error messages
+  , content :: Maybe [String]
+  , tags    :: Maybe [Maybe [String]] -- ^ here every 'tag' can have multiple error messages (or none)
+  , author  :: Maybe UserError        -- ^ here we have a possible 'UserError' in case validation fails
+  } deriving ( Show )
+
+data User = User
+  { username :: String
+  } deriving ( Show )
+
+data UserError = UserError
+  { username :: Maybe [String]
+  } deriving ( Show )
+```
+
+You might think that this will introduce a lot of duplicated code, and you are
+right! But there is a solution. If you do not need the flexibility of this first
+approach, you can use provided `Validatable` type family to ease the pain (or
+even write your own type family, Valor doesn't care).
+
+So, here is how the above code would look if we were to use type families:
+
+```haskell
+{# LANGUAGE FlexibleInstances    #}
+{# LANGUAGE StandaloneDeriving   #}
+{# LANGUAGE TypeSynonymInstances #}
+--
+import Data.Valor
+--
+data Article' a = Article
+  { id      :: Validatable a String           Int
+  , title   :: Validatable a [String]         String
+  , content :: Validatable a [String]         String
+  , tags    :: Validatable a [Maybe [String]] [String]
+  , author  :: Validatable a (User' a)        (User' a)
+  }
+
+type Article = Article' Identity
+deriving instance Show Article
+
+type ArticleError = Article' Validate
+deriving instance Show ArticleError
+
+data User' a = User
+  { username :: Validatable a [String] String
+  }
+
+type User = User' Identity
+deriving instance Show User
+
+type UserError = User' Validate
+deriving instance Show UserError
+```
+
+As you can see, we have to enable a couple of language extensions to allow us
+type class derivation with this approach.
+
+`Validatable` is basically a type level function that takes three arguments and
+returns a type.
+
++ First argument has kind @* -> *@ which means it is a type that takes another
+  type as an argument to make a concrete type. One common example of this is
+  `Maybe`. In this case however, we can pass in `Identity` to `Article'` to
+  create our "value/input" type and 'Validate' to create our "error" type. If we
+  pass in any other type it will just get applied to the third argument (which
+  is basic field value of our input type).
++ Second argument is the type we want to use for storing error(s). This will be
+  the resulting type of `Validatable` but wrapped in `Maybe` if we apply
+  `Validate`.
++ Third argument is the basic value type for the field of our input type. This
+  will be the resulting type in case we apply 'Identity'
+
 [1]: https://hackage.haskell.org/package/forma
 [2]: https://hackage.haskell.org/package/digestive-functors
 [3]: https://hackage.haskell.org/package/servant

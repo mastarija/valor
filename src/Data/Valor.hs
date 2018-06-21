@@ -1,138 +1,23 @@
-{-|
-Module      :  Valor
-Copyright   :  © 2018 Luka Hadžiegrić
-License     :  MIT
-Maintainer  :  Luka Hadžiegrić <reygoch@gmail.com>
-Stability   :  experimental
-Portability :  portable
-
-This module provides a general way for validating data. It was inspired by
-@forma@ and @digestive-functors@ and some of their shortcomings.
-In short, approach taken by the 'Valor' is to try and parse the error from the
-data instead of data from some fixed structured format like the JSON.
-
-Main feature of 'Valor' is that you are not forced to use specific input type
-like JSON, or to use specific output type like 'digestive-functors' 'View'.
-You can use what ever you like as an input and use custom error type as the
-output (although it does have to follow a specific format).
-
-To use 'Valor' you first need to have some "input" data type that you want to
-validate and an "error" data type that will store validation errors of your
-data. Although the "shapes" of your input and error data types can differ, in the
-most common use case your input and error would be of the same shape.
-
-Here is an example:
-
-> data Article = Article
->   { id      :: Int
->   , title   :: String
->   , content :: String
->   , tags    :: [String]
->   , author  :: User
->   } deriving ( Show )
-> 
-> data ArticleError = ArticleError
->   { id      :: Maybe String           -- ^ here I've intended for 'id' to have only one error message
->   , title   :: Maybe [String]         -- ^ for 'title' field there might be many error messages
->   , content :: Maybe [String]
->   , tags    :: Maybe [Maybe [String]] -- ^ here every 'tag' can have multiple error messages (or none)
->   , author  :: Maybe UserError        -- ^ here we have a possible 'UserError' in case validation fails
->   } deriving ( Show )
-> 
-> --
-> 
-> data User = User
->   { username :: String
->   } deriving ( Show )
-> 
-> data UserError = UserError
->   { username :: Maybe [String]
->   } deriving ( Show )
-
-You might think that this will introduce a lot of duplicated code, and you are
-right! But there is a solution. If you do not need the flexibility of this first
-approach, you can use provided 'Validatable' type family to ease the pain (or
-even write your own type family, 'Valor' doesn't care).
-
-So, here is how the above code would look if we were to use type families:
-
-> {# LANGUAGE FlexibleInstances    #}
-> {# LANGUAGE StandaloneDeriving   #}
-> {# LANGUAGE TypeSynonymInstances #}
->
-> --
->
-> data Article' a = Article
->   { id      :: Validatable a String           Int
->   , title   :: Validatable a [String]         String
->   , content :: Validatable a [String]         String
->   , tags    :: Validatable a [Maybe [String]] [String]
->   , author  :: Validatable a (User' a)        (User' a)
->   }
-> 
-> type Article = Article' Identity
-> deriving instance Show Article
-> 
-> type ArticleError = Article' Validate
-> deriving instance Show ArticleError
->
-> --
->
-> data User' a = User
->   { username :: Validatable a [String] String
->   }
-> 
-> type User = User' Identity
-> deriving instance Show User
-> 
-> type UserError = User' Validate
-> deriving instance Show UserError
-
-As you can see, we have to enable a couple of language extensions to allow us
-type class derivation with this approach.
-
-'Validatable' is basically a type level function that takes three arguments and
-returns a type.
-
-* First argument has kind @* -> *@ which means it is a type that takes another
-  type as an argument to make a concrete type. One common example of this is
-  'Maybe'. In this case however, we can pass in 'Identity' to @Article'@ to
-  create our "value/input" type and 'Validate' to create our "error" type. If we
-  pass in any other type it will just get applied to the third argument (which
-  is basic field value of our input type).
-
-* Second argument is the type we want to use for storing error(s). This will be
-  the resulting type of 'Validatable' but wrapped in 'Maybe' if we apply
-  'Validate'.
-
-* Third argument is the basic value type for the field of our input type. This
-  will be the resulting type in case we apply 'Identity'
--}
---
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 --
 module Data.Valor
-  ( -- * Constructing a 'Validator'
-    Validator
+  ( Validate
+  , Validatable
+  , Validator
   , skip
   , check
-  , checks
   , mapCheck
+  , checks
   , mapChecks
   , subValidator
   , mapSubValidator
-    -- * Validating the data
   , validate
   , validatePure
-    -- * Utilities
-  , Validate
-  , Validatable
-    -- * Convenient re-exports
   , Identity (..)
   , ExceptT
-  , runExceptT
   , throwE
+  , runExceptT
   ) where
 --
 import Data.Maybe ( isJust )
@@ -144,256 +29,242 @@ import Control.Monad.Trans.Except ( ExceptT, runExceptT, throwE )
 import Data.Functor.Identity ( Identity (..) )
 --
 
-{- Constructing a 'Validator' -}
-
 --------------------------------------------------------------------------------
-{-|
-Now that we have defined our input and error data types we can start
-constructing a 'Validator' for our data. In essence validator is just a function
-that takes in an input @i@ and returns an error @e@ wrapped in a monad @m@ if
-your input was invalid.
-
-'Validator' is an 'Applicative' and you can construct a new one by using
-functions: 'skip', 'check', 'mapCheck', 'checks', 'mapChecks', 'subValidator'
-and 'mapSubValidator'. Those functions have to be provided with actual checks to
-perform, and we define a single check by using 'ExceptT', so let's create some
-simple checks to perform on our data:
-
-> over18 :: Monad m => Int -> ExceptT String m Int
-> over18 n
->   | n < 18    = throwE "must be over 18"
->   | otherwise = pure n
-> 
-> nonempty :: Monad m => String -> ExceptT [String] m String
-> nonempty s
->   | length s == 0 = throwE ["can't be empty"]
->   | otherwise     = pure s
-> 
-> nonbollocks :: Monad m => String -> ExceptT [String] m String
-> nonbollocks s
->   | s == "bollocks" = throwE ["can't be bollocks"]
->   | otherwise       = pure s
-> 
-> nonshort :: Monad m => String -> ExceptT [String] m String
-> nonshort s = if length s < 10 then throwE ["too short"] else pure s
-
-With this we can finally create 'Validator's for our 'User' and 'Article' data
-types:
-
-> articleValidator :: Monad m => Validator Article m ArticleError
-> articleValidator = Article
->   <$> check        id      over18
->   <*> checks       title   [nonempty, nonbollocks]
->   <*> checks       content [nonempty, nonbollocks, nonshort]
->   <*> mapChecks    tags    [nonempty, nonbollocks]
->   <*> subValidator author  userValidator
-> 
-> userValidator :: Monad m => Validator User m UserError
-> userValidator = User
->   <$> checks username [nonempty, nonbollocks]
-
--}
-newtype Validator i m e = Validator
-  { unValidator :: i -> m (Validated e)
-  }
-
-instance (Applicative m, Semigroup e) => Semigroup (Validator i m e) where
-  Validator x <> Validator y = Validator $ \i -> liftA2 (<>) (x i) (y i)
-
-instance Functor m => Functor (Validator i m) where
-  fmap f (Validator v) = Validator $ fmap (fmap f) . v
-
-instance Applicative m => Applicative (Validator i m) where
-  pure x = Validator $ \i -> pure $ pure x
-  Validator x <*> Validator y = Validator $ \i ->
-    (<*>) <$> x i <*> y i
+-- | A simple "tag" used to tell the 'Validatable' type family that we are
+-- constructing the "error" type.
+data Validate e
 
 
 --------------------------------------------------------------------------------
--- | 'skip' is used when you are not interested in validating certain fields.
-skip :: Applicative m =>
-  Validator i m (Maybe e) -- ^ just a dummy validator that always succeeds.
-skip = Validator $ \_ -> pure $ Valid Nothing
-
-
---------------------------------------------------------------------------------
--- | Check if a single condition is satisfied.
-check :: forall i x m e. (Functor m, Monoid e)
-  => (i -> x)                -- ^ field selector
-  -> (x -> ExceptT e m x)    -- ^ check to be performed
-  -> Validator i m (Maybe e) -- ^ resulting validator
-check sel chk = mconvert $ Validator $ unValidator (validator chk) . sel
-
-
---------------------------------------------------------------------------------
--- | Check if mutiple conditions are satisfied.
-checks :: forall i x m e. ( Applicative m, Monoid e, Semigroup e )
-  => (i -> x)                -- ^ field selector
-  -> [x -> ExceptT e m x]    -- ^ list of checks
-  -> Validator i m (Maybe e) -- ^ resulting validator
-checks sel chks = foldr1 (<>) $ fmap (check sel) chks
-
---------------------------------------------------------------------------------
--- | Apply a single check to multiple values within 'Traversable' structure.
-mapCheck :: forall i f x m e. (Traversable f, Monad m, Monoid e)
-  => (i -> f x)                          -- ^ field selector
-  -> (x -> ExceptT e m x)                -- ^ check to be performed
-  -> Validator i m (Maybe (f (Maybe e))) -- ^ resulting validator
-mapCheck sel chk = Validator $ \i -> do
-  res <- mapM (validate $ validator chk) (sel i)
-  pure $ if any isJust res then Invalid $ Just res else Valid Nothing
-
---------------------------------------------------------------------------------
--- | Apply a multiple checks to values within 'Traversable' structure.
-mapChecks :: forall i f x m e.
-  ( Monad m
-  , Monoid e
-  , Traversable f
-  , Semigroup (f (Maybe e))
-  )
-  => (i -> f x)                          -- ^ field selector
-  -> [x -> ExceptT e m x]                -- ^ list of checks
-  -> Validator i m (Maybe (f (Maybe e))) -- ^ resulting validator
-mapChecks sel chks = foldr1 (<>) $ fmap (mapCheck sel) chks
-
-
---------------------------------------------------------------------------------
--- | Apply a 'Validator' instead of check to the field. This is useful when
--- validating nested records.
-subValidator :: forall i x m e. (Functor m)
-  => (i -> x)                -- ^ field selector
-  -> Validator x m e         -- ^ 'Validator' to run against field value
-  -> Validator i m (Maybe e) -- ^ resulting 'Validator'
-subValidator sel (Validator x) = mconvert $ Validator $ \i -> x $ sel i
-
-mapSubValidator :: forall i f x m e. ( Monad m, Traversable f )
-  => (i -> f x)                          -- ^ field selector
-  -> Validator x m e                     -- ^ 'Validator' to run against values
-  -> Validator i m (Maybe (f (Maybe e))) -- ^ resulting 'Validator'
-mapSubValidator sel val = Validator $ \i -> do
-  res <- mapM (validate val) (sel i)
-  pure $ if any isJust res then Invalid $ Just res else Valid Nothing
-
-
-{- Validating the data -}
-
---------------------------------------------------------------------------------
-{-|
-Once you have constructed your 'Validator' you can run it against your
-input data. If there were no validation errors you will get 'Nothing' wrapped
-in a monad of your choice as a result.
-
-Here is the result of running 'articleValidator' against some bad data:
-
-> badArticle :: Article
-> badArticle = Article
->   { id      = 17
->   , title   = "Some interesting title"
->   , content = "bollocks"
->   , tags    = ["I'm ok", "me too", "bollocks"]
->   , author  = badUser
->   }
->
-> badUser :: User
-> badUser = User ""
-
-> >>> validatePure articleValidator badArticle
-> Just
->   ( Article
->     { id = Just "must be over 18"
->     , title = Nothing
->     , content = Just ["can't be bollocks","too short"]
->     , tags = Just [Nothing,Nothing,Just ["can't be bollocks"]]
->     , author = Just (User {username = Just ["can't be empty"]})
->     }
->   )
--}
-validate :: ( Functor m )
-  => Validator i m e -- ^ 'Validator' that we want to run against the value
-  -> i               -- ^ value that is being validated
-  -> m (Maybe e)     -- ^ final result wrapped in a monad of our choosing
-validate (Validator v) i = helper <$> v i
-  where
-    helper :: Validated e -> Maybe e
-    helper (Invalid e) = Just e
-    helper _           = Nothing
-
-
---------------------------------------------------------------------------------
--- | This will run your 'Validator' as a pure computation returning simple
--- 'Maybe' instead of it being wrapped in some monad.
-validatePure :: Validator i Identity e -> i -> Maybe e
-validatePure v i = runIdentity $ validate v i
-
-
-{- Utilities -}
-
---------------------------------------------------------------------------------
--- | A simple type family used for constructing your data structure.
+-- | A simple type level function that is usefull to get rid of the boilerplate
+-- in case you want your error and data type to have the same shape / structure.
 type family Validatable a e x where
   Validatable Validate e x = Maybe e
   Validatable Identity e x = x
   Validatable a        e x = a x
 
---------------------------------------------------------------------------------
--- | Tag used with type family to tell the compiler that we are constructing the
--- "error" record.
-data Validate a
 
 --------------------------------------------------------------------------------
--- Utility function used for converting 'Validator' error from one type to
--- another (it's not very useful).
-converter
-  :: forall i m e e'. Functor m
-  => (e -> e')        -- ^ function to apply in case of 'Valid'
-  -> (e -> e')        -- ^ function to apply in case of 'Invalid'
-  -> Validator i m e  -- ^ initial 'Validator'
-  -> Validator i m e' -- ^ resulting 'Validator'
-converter valid invalid (Validator v) = Validator $ \i ->
-  fmap helper $ v i
-  where
-    helper :: Validated e -> Validated e'
-    helper (Valid   e) = Valid   $ valid   e
-    helper (Invalid e) = Invalid $ invalid e
-
-
---------------------------------------------------------------------------------
--- | Another simple utility function for converting 'Validator' error this time
--- into a 'Maybe'.
-mconvert :: Functor m => Validator i m e -> Validator i m (Maybe e)
-mconvert = converter (const Nothing) Just
-
-
---------------------------------------------------------------------------------
--- | Internal utility function for constructing a 'Validator' from 'ExceptT'.
-validator :: (Functor m, Monoid e)
-  => (i -> ExceptT e m x)
-  -> Validator i m e
-validator chk = Validator $ \i ->
-  either Invalid (const $ Valid mempty) <$> (runExceptT $ chk i)
-
-
-{- Internal stuff -}
-
---------------------------------------------------------------------------------
--- | Internal datatype used for handling users error structure.
-data Validated e = Valid e | Invalid e
+-- | Type that is used to carry the errors within 'Validator'. It's meant to be
+-- used only internally.
+data Validated e = Neutral | Valid e | Invalid e
   deriving ( Show )
 
-instance Semigroup e => Semigroup (Validated e) where
-  Valid _    <> x          = x
-  x          <> Valid _    = x
-  Invalid e1 <> Invalid e2 = Invalid (e1 <> e2)
+instance Semigroup e => Semigroup ( Validated e ) where
+  Neutral    <> x          = x
+  x          <> Neutral    = x
+  Valid   e1 <> Valid   e2 = Valid   $ e1 <> e2
+  Valid   e1 <> Invalid e2 = Invalid $ e1 <> e2
+  Invalid e1 <> Valid   e2 = Invalid $ e1 <> e2
+  Invalid e1 <> Invalid e2 = Invalid $ e1 <> e2
 
-instance Functor Validated where
-  fmap f (Valid   e) = Valid   $ f e
+instance Semigroup e => Monoid ( Validated e ) where
+  mempty  = Neutral
+  mappend = (<>)
+
+instance Functor ( Validated ) where
+  fmap _ Neutral     = Neutral
+  fmap f (Valid e)   = Valid   $ f e
   fmap f (Invalid e) = Invalid $ f e
 
-instance Applicative Validated where
+instance Applicative ( Validated ) where
   pure                     = Valid
-  Valid   ef <*> Valid   e = Valid   $ ef e
-  Valid   ef <*> Invalid e = Invalid $ ef e
-  Invalid ef <*> Valid   e = Invalid $ ef e
-  Invalid ef <*> Invalid e = Invalid $ ef e
+  Neutral    <*> _         = Neutral
+  _          <*> Neutral   = Neutral
+  Valid   fe <*> Invalid e = Invalid $ fe e
+  Valid   fe <*> Valid   e = Valid   $ fe e
+  Invalid fe <*> Valid   e = Invalid $ fe e
+  Invalid fe <*> Invalid e = Invalid $ fe e
+
+--
+
+--------------------------------------------------------------------------------
+-- | With defined data types we can start constructing our 'Validator'. This can
+-- be achieved by using 'skip', 'check', 'mapCheck', 'checks', 'mapChecks',
+-- 'subValidator' and 'mapValidator', but before that we need to define some
+-- "tests".
+--
+-- Tests should be in the form of @x -> ExceptT e m x@. 'ExceptT' was chosen for
+-- the task because it allows us to use a custom monad and throw an error at the
+-- same time.
+--
+-- __Pro tip:__ In case your test depends on the success or failure of another
+-- field, you can use the 'State' monad or transformer to get the access to the
+-- input data (you will have to repeat the validation of required field though).
+--
+-- With that in mind, let's define some basic tests:
+--
+-- > nonempty' :: Monad m => Text -> ExceptT String m Text
+-- > nonempty' t = if Text.null t
+-- >   then throwE "can't be empty"
+-- >   else pure t
+-- > 
+-- > nonempty :: Monad m => Text -> ExceptT [String] m Text
+-- > nonempty t = if Text.null t
+-- >   then throwE ["can't be empty"]
+-- >   else pure t
+-- > 
+-- > nonbollocks :: Monad m => Text -> ExceptT [String] m Text
+-- > nonbollocks t = if t == "bollocks"
+-- >   then throwE ["can't be bollocks"]
+-- >   else pure t
+-- > 
+-- > nonshort :: Monad m => Text -> ExceptT [String] m Text
+-- > nonshort t = if Text.length t < 10
+-- >   then throwE ["too short"]
+-- >   else pure t
+--
+newtype Validator i m e = Validator
+  { unValidator :: i -> m (Validated e)
+  }
+
+instance ( Applicative m, Semigroup e ) => Semigroup ( Validator i m e ) where
+  Validator x <> Validator y = Validator $ \i -> liftA2 (<>) (x i) (y i)
+
+instance ( Applicative m, Semigroup e ) => Monoid ( Validator i m e ) where
+  mempty  = Validator $ const (pure mempty)
+  mappend = (<>)
+
+instance Functor m => Functor ( Validator i m ) where
+  fmap f (Validator v) = Validator $ \i -> fmap (fmap f) (v i)
+
+instance Applicative m => Applicative ( Validator i m ) where
+  pure x                      = Validator $ \_ -> pure $ pure x
+  Validator x <*> Validator y = Validator $ \i -> (<*>) <$> x i <*> y i
+
+--
+
+--------------------------------------------------------------------------------
+-- | This function is used to run the 'Validator' against the input data @i@,
+-- once validation process is finished it will 'Maybe' return the error @e@
+-- wrapped in the monad @m@ of your choice.
+validate :: Functor m
+  => Validator i m e -- ^ 'Validator' to run against the input data
+  -> i               -- ^ input data that you want to validate
+  -> m (Maybe e)     -- ^ result of the validation
+validate (Validator v) i = fmap validatedtomaybe $ v i
 
 
+--------------------------------------------------------------------------------
+-- | In case you don't have a need for a monad you can use this function to run
+-- your 'Validator' and get pure 'Maybe' instead of 'Maybe' wrapped in a monad.
+validatePure ::
+     Validator i Identity e -- ^ 'Validator' to run against the input data
+  -> i                      -- ^ input data that you want to validate
+  -> Maybe e                -- ^ result of the validation
+validatePure v i = runIdentity $ validate v i
+
+--
+
+--------------------------------------------------------------------------------
+-- | Use this in case you are not interested in validating a certain field.
+skip :: Applicative m
+  => Validator i m (Maybe e) -- ^ 'Validator' that never returns an error
+skip = Validator $ \i -> pure $ Valid Nothing
+
+
+--------------------------------------------------------------------------------
+-- | Runs a single check against the specified field.
+check :: forall i x m e. Monad m
+  => (i -> x)                -- ^ field selector
+  -> (x -> ExceptT e m x)    -- ^ field check
+  -> Validator i m (Maybe e) -- ^ resulting 'Validator'
+check sel chk = Validator $ \i -> validateprep <$> checkprep (chk $ sel i)
+
+
+--------------------------------------------------------------------------------
+-- | Runs a single check over every element of some 'Traversable' "container".
+--
+-- This is quite useful if you for example have a field that contains array of
+-- items and you want to run a check against every single element of that list
+-- instead of the list as a whole.
+mapCheck :: forall i f x m e. ( Monad m, Traversable f )
+  => (i -> f x)                          -- ^ field selector
+  -> (x -> ExceptT e m x)                -- ^ field check
+  -> Validator i m (Maybe (f (Maybe e))) -- ^ resulting 'Validator'
+mapCheck sel chk = Validator $ \i -> do
+  res <- mapM (checkprep . chk) (sel i)
+  pure $ if any isJust res then Invalid $ Just res else Valid Nothing
+
+--------------------------------------------------------------------------------
+-- | Runs multiple checks against the specified field. Resulting error must be a
+-- 'Semigroup' so that it can be combined or accumulated in some fashion,
+-- most convenient thing would be to use a list of "something".
+checks :: forall i x m e. ( Monad m, Semigroup e )
+  => (i -> x)                -- ^ field selector
+  -> [x -> ExceptT e m x]    -- ^ list of field checks
+  -> Validator i m (Maybe e) -- ^ resulting 'Validator'
+checks sel chks = Validator $ \i -> mconcat <$> mapM (mprep . ($ sel i)) chks
+
+--------------------------------------------------------------------------------
+-- | Basically the same thing as 'mapCheck' but it allows you to run multiple
+-- checks per element.
+mapChecks :: forall i f x m e. ( Monad m, Traversable f, Monoid e )
+  => (i -> f x)                          -- ^ field selector
+  -> [x -> ExceptT e m x]                -- ^ list of field checks
+  -> Validator i m (Maybe (f (Maybe e))) -- ^ resulting 'Validator'
+mapChecks sel chks = Validator $ \i -> do
+  res <- mapM (helper chks) (sel i)
+  pure $ if any isJust res then Invalid $ Just res else Valid Nothing
+  where
+    helper :: [x -> ExceptT e m x] -> x -> m (Maybe e)
+    helper chks x = mconcat <$> mapM checkprep (fmap ($x) chks)
+
+
+--------------------------------------------------------------------------------
+-- | Runs a custom made 'Validator' against the field data.
+subValidator :: forall i x m e. Functor m
+  => (i -> x)                -- ^ field selector
+  -> Validator x m e         -- ^ custom field 'Validator'
+  -> Validator i m (Maybe e) -- ^ resulting 'Validator'
+subValidator sel val = Validator $ \i ->
+  validateprep <$> validate val (sel i)
+
+--------------------------------------------------------------------------------
+-- | Runs a custom made 'Validator' against the every element in a
+-- 'Traversable' container.
+mapSubValidator :: forall i f x m e. (Monad m, Traversable f)
+  => (i -> f x)                          -- ^ field selector
+  -> Validator x m e                     -- ^ custom field 'Validator'
+  -> Validator i m (Maybe (f (Maybe e))) -- ^ resulting 'Validator'
+mapSubValidator sel val = Validator $ \i -> do
+  res <- mapM (validate val) (sel i)
+  pure $ if any isJust res then Invalid $ Just res else Valid Nothing
+
+--
+
+mprep :: Monad m => ExceptT e m x -> m (Validated (Maybe e))
+mprep = fmap validateprep . checkprep
+
+checkprep :: Monad m => ExceptT e m x -> m (Maybe e)
+checkprep = fmap (either Just (const Nothing)) . runExceptT
+
+validateprep :: Maybe e -> Validated (Maybe e)
+validateprep (Just e) = Invalid $ Just e
+validateprep Nothing  = Valid   $ Nothing
+
+validatedtomaybe :: Validated e -> Maybe e
+validatedtomaybe Neutral     = Nothing
+validatedtomaybe (Valid e)   = Nothing
+validatedtomaybe (Invalid e) = Just e
+
+--------------------------------------------------------------------------------
+{- $introduction
+
+__Valor__ strives to be a simple, intuitive and easy to use validation library.
+
+It was inspired by libraries like [forma](https://hackage.haskell.org/package/forma)
+and [digestive-functors](https://hackage.haskell.org/package/digestive-functors)
+and some of their shortcomings.
+
+For starters, both of those libraries are a bit too complicated (especially
+digestive-functors) and restrictive about the data they work with and Valor
+strives to remedy that. Another big problem is that they are essentially
+libraries for writing parsers instead of validating data. The main difference
+between Valor and existing validation libraries is that instead of trying to
+parse the data from some fixed structure like JSON, it is trying to parse error
+from the data (which can also be a JSON structure, Valor doesn't care).
+
+__Anyway, try to read this documentation as a continuous tutorial since it__
+__will explain all the steps necessary to validate some data.__
+-}
