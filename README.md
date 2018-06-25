@@ -1,13 +1,6 @@
-![valor-build-status](https://api.travis-ci.org/reygoch/valor.svg?branch=master)
-
-<p align="center">
-	<img
-		src="valor-logo.svg?sanitize=true"
-		alt="Valor Logo"
-		title="Valor"
-		style="max-width:100%;"
-	>
-</p>
+![Valor Build Status](https://api.travis-ci.org/reygoch/valor.svg?branch=master)
+[![Valor Documentation](https://img.shields.io/badge/hackage-0.1.0.0-blue.svg)](https://hackage.haskell.org/package/valor-0.1.0.0)
+![Valor Logo](valor-logo.svg)
 
 # Valor
 
