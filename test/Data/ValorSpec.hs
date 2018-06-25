@@ -10,13 +10,17 @@ module Data.ValorSpec where
 import Prelude hiding ( id )
 import Test.Hspec ( Spec, describe, it, shouldBe )
 
+import Data.Functor.Identity ( Identity (..) )
+import Control.Monad.Trans.Except ( ExceptT, runExceptT, throwE )
+
 import Data.Text ( Text )
-import Data.Valor
-  ( Validatable, Validator, Validate, Identity, ExceptT
-  , skip, check, mapCheck, checks, mapChecks, subValidator, mapSubValidator
-  , validatePure, throwE
-  )
 import qualified Data.Text as Text
+
+import Data.Valor
+  ( Validatable, Validator, Validate
+  , skip, check, mapCheck, checks, mapChecks
+  , subValidator, mapSubValidator, validatePure
+  )
 --
 
 spec :: Spec
@@ -110,6 +114,10 @@ subValidatorTest = Test <$> subValidator payload userValidator
 mapSubValidatorTest :: Monad m => Validator (Test [User]) m (Test (Maybe [Maybe UserError]))
 mapSubValidatorTest = Test <$> mapSubValidator payload userValidator
 
+--
+
+{- COMPLEX TESTS -}
+
 data User' a = User
   { email    :: Validatable a String   Text
   , username :: Validatable a [String] Text
@@ -138,8 +146,6 @@ goodUser :: User
 goodUser = User "hello@kitty.com" "kittyusername"
 
 --
-
-{- COMPLEX TESTS -}
 
 data Article' a = Article
   { id      :: Validatable a String            Int
