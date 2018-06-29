@@ -1,6 +1,5 @@
 ![Valor Build Status](https://api.travis-ci.org/reygoch/valor.svg?branch=master)
 [![Valor Documentation](https://img.shields.io/badge/hackage-0.1.0.0-blue.svg)](https://hackage.haskell.org/package/valor-0.1.0.0)
-![Valor Logo](valor-logo.svg)
 
 # Valor
 
@@ -63,81 +62,59 @@ In no particular order here are the main problems I have with them:
 
 ## Tutorial
 
-This module provides a general way for validating data. It was inspired by
-`forma` and `digestive-functors` and some of their shortcomings.
-In short, approach taken by the Valor is to try and parse the error from the
-data instead of data from some fixed structured format like the JSON.
+Before we get started, Valor uses `ExceptT` from the [transformers][5] package so make sure you add it as a dependency in your project.
 
-Main feature of Valor is that you are not forced to use specific input type
-like JSON, or to use specific output type like `digestive-functors` `View`.
-You can use what ever you like as an input and use custom error type as the
-output (although it does have to follow a specific format).
+First thing we usually want to do is to define our input data and error types.
+We can define them separately by hand, or if our error and data types have the
+same "shape" (same field names) we can use a handy type family to help us do
+them all at once.
 
-To use Valor you first need to have some "input" data type that you want to
-validate and an "error" data type that will store validation errors of your
-data. Although the "shapes" of your input and error data types can differ, in
-the most common use case your input and error would be of the same shape.
-
-Here is an example:
+Lets declare our imports and required language extensions:
 
 ```haskell
-import Data.Valor
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 --
-data Article = Article
-  { id      :: Int
-  , title   :: String
-  , content :: String
-  , tags    :: [String]
-  , author  :: User
-  } deriving ( Show )
+module Tutorial where
+--
+import Prelude hiding ( id ) -- just so that we can use id as a field name
+                             -- without any difficulties
+import Data.Valor
 
-data ArticleError = ArticleError
-  { id      :: Maybe String           -- ^ here I've intended for 'id' to have only one error message
-  , title   :: Maybe [String]         -- ^ for 'title' field there might be many error messages
-  , content :: Maybe [String]
-  , tags    :: Maybe [Maybe [String]] -- ^ here every 'tag' can have multiple error messages (or none)
-  , author  :: Maybe UserError        -- ^ here we have a possible 'UserError' in case validation fails
-  } deriving ( Show )
+import Data.Functor.Identity ( Identity (..) )
+import Control.Monad.Trans.Except ( ExceptT, runExceptT, throwE )
 
+import Data.Text ( Text )
+import qualified Data.Text as Text
+--
+```
+
+With that out of the way we can start defining our data types. As previously
+stated, we can make both data and error types by hand like this (which would
+additionally require the use of `DuplicateRecordField` extension):
+
+```haskell
 data User = User
-  { username :: String
+  { username :: Text
+  , password :: Text
   } deriving ( Show )
 
 data UserError = UserError
-  { username :: Maybe [String]
+  { username :: Maybe String   -- this field will have only one error
+  , password :: Maybe [String] -- this one can have multiple errors
   } deriving ( Show )
 ```
 
-You might think that this will introduce a lot of duplicated code, and you are
-right! But there is a solution. If you do not need the flexibility of this first
-approach, you can use provided `Validatable` type family to ease the pain (or
-even write your own type family, Valor doesn't care).
-
-So, here is how the above code would look if we were to use type families:
+This approach is perfectly valid and much more flexible since it allows you to
+have different fields in data and error type, but if you want your types to
+have the same field names than it might be easier to use `Validatable` type
+family to get rid of the boilerplate and define them like this:
 
 ```haskell
-{# LANGUAGE FlexibleInstances    #}
-{# LANGUAGE StandaloneDeriving   #}
-{# LANGUAGE TypeSynonymInstances #}
---
-import Data.Valor
---
-data Article' a = Article
-  { id      :: Validatable a String           Int
-  , title   :: Validatable a [String]         String
-  , content :: Validatable a [String]         String
-  , tags    :: Validatable a [Maybe [String]] [String]
-  , author  :: Validatable a (User' a)        (User' a)
-  }
-
-type Article = Article' Identity
-deriving instance Show Article
-
-type ArticleError = Article' Validate
-deriving instance Show ArticleError
-
 data User' a = User
-  { username :: Validatable a [String] String
+  { email    :: Validatable a String   Text
+  , username :: Validatable a [String] Text
   }
 
 type User = User' Identity
@@ -147,23 +124,161 @@ type UserError = User' Validate
 deriving instance Show UserError
 ```
 
-As you can see, we have to enable a couple of language extensions to allow us
-type class derivation with this approach.
+This is equivalent to the first example, but much more maintainable. With this 
+approach we have to use `StandaloneDeriving` and `TypeSynonymInstances`
+language extensions to allow us instance derivation.
 
-`Validatable` is basically a type level function that takes three arguments and
-returns a type.
+Right, let's define a more complex type now:
 
-+ First argument has kind @* -> *@ which means it is a type that takes another
-  type as an argument to make a concrete type. One common example of this is
-  `Maybe`. In this case however, we can pass in `Identity` to `Article'` to
-  create our "value/input" type and 'Validate' to create our "error" type. If we
-  pass in any other type it will just get applied to the third argument (which
-  is basic field value of our input type).
-+ Second argument is the type we want to use for storing error(s). This will be
-  the resulting type of `Validatable` but wrapped in `Maybe` if we apply
-  `Validate`.
-+ Third argument is the basic value type for the field of our input type. This
-  will be the resulting type in case we apply 'Identity'
+```haskell
+data Article' a = Article
+  { id      :: Validatable a String            Int
+  , title   :: Validatable a [String]          Text
+  , content :: Validatable a [String]          Text
+  , tags1   :: Validatable a [Maybe [String]]  [Text] -- Here I want to have
+                                                      -- multiple errors for a
+                                                      -- single tag in a list.
+
+  , tags2   :: Validatable a [Maybe String]    [Text] -- Here I want to have
+                                                      -- only one reported
+                                                      -- error per tag. 
+  , author  :: Validatable a UserError         User
+  , authors :: Validatable a [Maybe UserError] [User]
+  }
+
+type Article = Article' Identity
+deriving instance Show Article
+
+type ArticleError = Article' Validate
+deriving instance Show ArticleError
+```
+
+`Validatable` type family is nothing smart. In fact, it is just a simple type
+level function. Here is its definition, it should be obvious what it does:
+
+```haskell
+type family Validatable a e x where
+  Validatable Validate e x = Maybe e
+  Validatable Identity e x = x
+  Validatable a        e x = a x
+```
+
+Ok, so now we have seen how `Validatable` type family works, we have defined 
+data types that we want to validate and data types that will store our errors.
+Before we start writing our validation rules (`Validator`s) we first need to
+have some tests / checks to run against our field values so let's define some
+simple ones:
+
+```haskell
+nonover18 :: Monad m => Int -> ExceptT String m Int
+nonover18 n = if n < 18
+  then throwE "must be greater than 18"
+  else pure n
+
+nonempty' :: Monad m => Text -> ExceptT String m Text
+nonempty' t = if Text.null t
+  then throwE "can't be empty"
+  else pure t
+
+nonempty :: Monad m => Text -> ExceptT [String] m Text
+nonempty t = if Text.null t
+  then throwE ["can't be empty"]
+  else pure t
+
+nonbollocks :: Monad m => Text -> ExceptT [String] m Text
+nonbollocks t = if t == "bollocks"
+  then throwE ["can't be bollocks"]
+  else pure t
+
+nonshort :: Monad m => Text -> ExceptT [String] m Text
+nonshort t = if Text.length t < 10
+  then throwE ["too short"]
+  else pure t
+```
+
+Here the `ExceptT` transformer is used because it allows you to use your own
+monad in case you need to access the database to validate some data. This is
+also handy in case your test depends on the success or failure of some other
+field value. In that case you can use the `State` monad or transformer to pass
+in the full data being validated instead of just a current field value.
+
+With that out of our way we can start writing our 'Validator's:
+
+```haskell
+userValidator :: Monad m => Validator User m UserError
+userValidator = User
+  <$> check  email nonempty'
+  <*> checks username [nonempty, nonbollocks, nonshort]
+
+articleValidator :: Monad m => Validator Article m ArticleError
+articleValidator = Article
+  <$> check           id      nonover18
+  <*> checks          title   [nonempty, nonbollocks]
+  <*> checks          content [nonempty, nonshort, nonbollocks]
+  <*> mapChecks       tags1   [nonempty, nonbollocks]
+  <*> mapCheck        tags2   nonempty'
+  <*> subValidator    author  userValidator
+  <*> mapSubValidator authors userValidator
+```
+
+As you can see, it is very simple and readable code. You just state what field
+you want to validate and what tests you want to run against it. As a result you
+get your error type (once you've ran your `Validator` against some actual data)
+.
+
+Let's define some sample data to test our `Validator` on:
+
+```haskell
+goodUser :: User
+goodUser = User "hello@kitty.com" "kittyusername"
+
+badUser :: User
+badUser = User "boaty@mcboatface.com" "bollocks"
+
+badArticle :: Article
+badArticle = Article
+  { id      = 17
+  , title   = ""
+  , content = "bollocks"
+  , tags1   = ["", "tag01", "tag02"]
+  , tags2   = ["tag01", ""]
+  , author  = badUser
+  , authors = [badUser, goodUser]
+  }
+```
+
+And now we can run our `Article` `Validator` against some actual data and here
+is how it's done:
+
+```haskell
+>>> validatePure articleValidator badArticle
+Just
+  ( Article
+      { id = Just "must be greater than 18"
+      , title = Just ["can't be empty"]
+      , content = Just ["too short","can't be bollocks"]
+      , tags1 = Just [Just ["can't be empty"],Nothing,Nothing]
+      , tags2 = Just [Nothing,Just "can't be empty"]
+      , author = Just
+          ( User
+              { email = Nothing
+              , username = Just ["can't be bollocks","too short"]
+              }
+          )
+      , authors = Just
+        [ Just
+            ( User
+                { email = Nothing
+                , username = Just ["can't be bollocks","too short"]
+                }
+            )
+        ,Nothing
+        ]
+      }
+  )
+```
+
+That's all folks! To learn more read the actual documentation.
 
 [1]: https://hackage.haskell.org/package/forma
 [2]: https://hackage.haskell.org/package/digestive-functors
