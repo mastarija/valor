@@ -64,6 +64,7 @@ In no particular order here are the main problems I have with them:
 
 Before we get started, Valor uses `ExceptT` from the [transformers][5] package so make sure you add it as a dependency in your project.
 
+### Defining  data types
 First thing we usually want to do is to define our input data and error types.
 We can define them separately by hand, or if our error and data types have the
 same "shape" (same field names) we can use a handy type family to help us do
@@ -163,6 +164,7 @@ type family Validatable a e x where
   Validatable a        e x = a x
 ```
 
+### Creating a `Validator`
 Ok, so now we have seen how `Validatable` type family works, we have defined 
 data types that we want to validate and data types that will store our errors.
 Before we start writing our validation rules (`Validator`s) we first need to
@@ -226,6 +228,7 @@ you want to validate and what tests you want to run against it. As a result you
 get your error type (once you've ran your `Validator` against some actual data)
 .
 
+### Validating data
 Let's define some sample data to test our `Validator` on:
 
 ```haskell
@@ -284,3 +287,4 @@ That's all folks! To learn more read the actual documentation.
 [2]: https://hackage.haskell.org/package/digestive-functors
 [3]: https://hackage.haskell.org/package/servant
 [4]: https://hackage.haskell.org/package/aeson-1.4.0.0/docs/Data-Aeson.html#t:Value
+[5]: https://hackage.haskell.org/package/transformers-0.5.5.0/docs/Control-Monad-Trans-Except.html#t:ExceptT
