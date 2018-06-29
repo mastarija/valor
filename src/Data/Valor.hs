@@ -1,3 +1,11 @@
+{-|
+Module      :  Valor
+Copyright   :  © 2018 Luka Hadžiegrić
+License     :  MIT
+Maintainer  :  Luka Hadžiegrić <reygoch@gmail.com>
+Stability   :  experimental
+Portability :  portable
+-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 --
