@@ -42,7 +42,7 @@ In no particular order here are the main problems I have with them:
   User would send `SomeData` encoded as JSON to the server, [servant][3] would
   automagically parse it and pass it to the `Handler` for further processing.
 
-  If we wanted to validate this data with let's say [forma][1] than we would
+  If we wanted to validate this data with let's say [forma][1] then we would
   have to write something like this:
 
   ```haskell
