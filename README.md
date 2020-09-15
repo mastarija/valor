@@ -1,4 +1,5 @@
-![Valor Build Status](https://api.travis-ci.org/reygoch/valor.svg?branch=master)
+[![Valor Build Status](https://travis-ci.org/mastarija/valor.svg?branch=dev)](https://travis-ci.org/mastarija/valor)
+
 [![Valor Documentation](https://img.shields.io/badge/hackage-0.1.0.0-blue.svg)](https://hackage.haskell.org/package/valor-0.1.0.0)
 
 # Valor
@@ -21,13 +22,13 @@ In no particular order here are the main problems I have with them:
   Additionally, [digestive-functors][2] use a custom result type that you need
   to get familiar with to some extent.
 
-+ They are essentially parsers, and I personally don't like to manually handle 
++ They are essentially parsers, and I personally don't like to manually handle
   conversion of JSON fields from e.g. string to integers and other data types.
 
   Sure, it might be useful to tell the user that he entered text instead of a
   number, but in that case I'd argue that your submission form is bad.
 
-  Even in this case, it should still be possible to validate plain JSON with 
+  Even in this case, it should still be possible to validate plain JSON with
   Valor, but if that is your use case I'd recommend you use [forma][1] for that
   since it was specifically designed with JSON in mind.
 
@@ -125,7 +126,7 @@ type UserError = User' Validate
 deriving instance Show UserError
 ```
 
-This is equivalent to the first example, but much more maintainable. With this 
+This is equivalent to the first example, but much more maintainable. With this
 approach we have to use `StandaloneDeriving` and `TypeSynonymInstances`
 language extensions to allow us instance derivation.
 
@@ -142,7 +143,7 @@ data Article' a = Article
 
   , tags2   :: Validatable a [Maybe String]    [Text] -- Here I want to have
                                                       -- only one reported
-                                                      -- error per tag. 
+                                                      -- error per tag.
   , author  :: Validatable a UserError         User
   , authors :: Validatable a [Maybe UserError] [User]
   }
@@ -165,7 +166,7 @@ type family Validatable a e x where
 ```
 
 ### Creating a `Validator`
-Ok, so now we have seen how `Validatable` type family works, we have defined 
+Ok, so now we have seen how `Validatable` type family works, we have defined
 data types that we want to validate and data types that will store our errors.
 Before we start writing our validation rules (`Validator`s) we first need to
 have some tests / checks to run against our field values so let's define some

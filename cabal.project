@@ -1,6 +1,6 @@
-packages
-  : valor.cabal
+packages    : valor.cabal
 
-constraints
-  : base          >=4.0 && <5
-  , transformers  >=0.5 && <0.6
+constraints : base          >=4.0 && <5
+            , text          >=1.2 && <1.3
+            , hspec         >=2.7 && <2.8
+            , transformers  >=0.5 && <0.6
