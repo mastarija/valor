@@ -1,16 +1,29 @@
-sudo: false
+sudo: true
+language: haskell
+
+git:
+  depth: 5
+
+cabal: "3.0"
 
 cache:
   directories:
-    $HOME/.stack
+  - "$HOME/.cabal/store"
 
-before_install:
-  - mkdir -p ~/.local/bin
-  - export PATH=$HOME/.local/bin/:$PATH
-  - travis_retry curl -L https://get.haskellstack.org/stable/linux-x86_64.tar.gz | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+matrix:
+  include:
+  - ghc: 8.6.5
+  - ghc: 8.8.4
+  - ghc: 8.10.2
 
 install:
-  - travis_wait stack --no-terminal --install-ghc test --only-dependencies
+  - ghc --version
+  - cabal --version
+  - cabal update
+  - cabal build --enable-tests --enable-benchmarks
 
 script:
-  - stack --no-terminal --skip-ghc-check test
+  - cabal test --enable-tests
+
+notifications:
+  email: false
