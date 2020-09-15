@@ -1,6 +1,4 @@
-[![Valor Build Status](https://travis-ci.org/mastarija/valor.svg?branch=dev)](https://travis-ci.org/mastarija/valor)
-
-[![Valor Documentation](https://img.shields.io/badge/hackage-0.1.0.0-blue.svg)](https://hackage.haskell.org/package/valor-0.1.0.0)
+[![Valor Build Status](https://travis-ci.org/mastarija/valor.svg?branch=dev)](https://travis-ci.org/mastarija/valor) [![Valor Documentation](https://img.shields.io/badge/hackage-0.1.0.0-blue.svg)](https://hackage.haskell.org/package/valor-0.1.0.0)
 
 # Valor
 
