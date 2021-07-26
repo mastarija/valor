@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -17,7 +18,8 @@ import Data.Text ( Text )
 import qualified Data.Text as Text
 
 import Data.Valor
-  ( Validatable, Validator, Validate
+  ( Validatable, Validator, Valor (..)
+  , check' , chk
   , skip, check, mapCheck, checks, mapChecks
   , subValidator, mapSubValidator, validatePure
   )
@@ -123,11 +125,11 @@ data User' a = User
   , username :: Validatable a [String] Text
   }
 
-type User = User' Identity
+type User = User' 'Simple
 deriving instance Eq   User
 deriving instance Show User
 
-type UserError = User' Validate
+type UserError = User' 'Report
 deriving instance Eq   UserError
 deriving instance Show UserError
 
@@ -157,23 +159,23 @@ data Article' a = Article
   , authors :: Validatable a [Maybe UserError] [User]
   }
 
-type Article = Article' Identity
+type Article = Article' 'Simple
 deriving instance Eq   Article
 deriving instance Show Article
 
-type ArticleError = Article' Validate
+type ArticleError = Article' 'Report
 deriving instance Eq   ArticleError
 deriving instance Show ArticleError
 
 articleValidator :: Monad m => Validator Article m ArticleError
 articleValidator = Article
-  <$> check           id      nonover18
-  <*> checks          title   [nonempty, nonbollocks]
-  <*> checks          content [nonempty, nonshort, nonbollocks]
-  <*> mapChecks       tags1   [nonempty, nonbollocks]
-  <*> mapCheck        tags2   nonempty'
-  <*> subValidator    author  userValidator
-  <*> mapSubValidator authors userValidator
+  <$> chk id      nonover18
+  <*> chk title   [nonempty, nonbollocks]
+  <*> chk content [nonempty, nonshort, nonbollocks]
+  <*> chk tags1   [nonempty, nonbollocks]
+  <*> chk tags2   nonempty'
+  <*> chk author  userValidator
+  <*> chk authors userValidator
 
 badArticle :: Article
 badArticle = Article
