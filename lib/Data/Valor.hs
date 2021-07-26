@@ -1,12 +1,15 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 --
 module Data.Valor
   ( -- * Introduction
     -- $introduction
 
     -- * Defining data types
-    Validate
+    Valor
   , Validatable
 
     -- * Creating a 'Validator'
@@ -25,7 +28,6 @@ module Data.Valor
   ) where
 --
 import Data.Maybe ( isJust )
-import Data.Semigroup ( Semigroup, (<>) )
 
 import Control.Applicative ( liftA2 )
 import Control.Monad.Trans.Except ( ExceptT, runExceptT )
@@ -33,11 +35,85 @@ import Control.Monad.Trans.Except ( ExceptT, runExceptT )
 import Data.Functor.Identity ( Identity (..) )
 --
 
---------------------------------------------------------------------------------
--- | A simple "tag" used to tell the 'Validatable' type family that we are
--- constructing the "error" type.
-data Validate e
+class Check f v o where
+  check' :: f -> v -> o
 
+instance forall i x e m. Monad m
+  => Check ( i -> x ) ( x -> ExceptT e m x ) ( Validator i m ( Maybe e ) ) where
+  check' sel chk = Validator $ \ i -> validateprep <$> checkprep ( chk $ sel i )
+
+instance forall i f x m e. ( Monad m , Traversable f )
+  => Check ( i -> f x ) ( x -> ExceptT e m x ) ( Validator i m ( Maybe ( f ( Maybe e ) ) ) ) where
+  check' sel chk = Validator $ \ i -> do
+    res <- mapM ( checkprep . chk ) ( sel i )
+    pure $ if any isJust res then Wrong $ Just res else Sound Nothing
+
+instance forall i x m e. ( Monad m , Semigroup e )
+  => Check ( i -> x ) [ x -> ExceptT e m x ] ( Validator i m ( Maybe e ) ) where
+  check' sel chks = Validator $ \i -> mconcat <$> mapM (mprep . ($ sel i)) chks
+
+instance forall i f x m e. ( Monad m , Traversable f , Monoid e )
+  => Check ( i -> f x ) [ x -> ExceptT e m x ] ( Validator i m ( Maybe ( f ( Maybe e ) ) ) ) where
+  check' sel chks = Validator $ \i -> do
+    res <- mapM (helper chks) (sel i)
+    pure $ if any isJust res then Wrong $ Just res else Sound Nothing
+    where
+      helper :: [x -> ExceptT e m x] -> x -> m (Maybe e)
+      helper chks' x = mconcat <$> mapM checkprep (fmap ($x) chks')
+
+instance forall i x m e. Functor m
+  => Check ( i -> x ) ( Validator x m e ) ( Validator i m ( Maybe e ) ) where
+  check' sel val = Validator $ \i ->
+    validateprep <$> validate val (sel i)
+
+instance forall i f x m e. ( Monad m , Traversable f )
+  => Check ( i -> f x ) ( Validator x m e ) ( Validator i m ( Maybe ( f ( Maybe e ) ) ) ) where
+  check' sel val = Validator $ \i -> do
+    res <- mapM (validate val) (sel i)
+    pure $ if any isJust res then Wrong $ Just res else Sound Nothing
+
+{-
+
+  I1 : a
+  I2 : f a
+
+  C1 : a -> c
+  C2 : [ a -> c ]
+
+  O1 : Maybe e
+  O2 : Semigroup e => Maybe e
+  O3 : Monoid e => Maybe ( f ( Maybe b ) )
+
+  1 : ( i -> x ) -> ( x -> ExceptT e m x ) -> Validator i m ( Maybe e )
+  2 : ( i -> f x ) -> ( x -> ExceptT e m x ) -> Validator i m ( Maybe ( f ( Maybe e ) ) )
+
+  3 : ( i -> x ) -> [ x -> ExceptT e m x ] -> Validator i m ( Maybe e )
+  4 : ( i -> f x ) -> [ x -> ExceptT e m x ] -> Validator i m ( Maybe ( f ( Maybe e ) ) )
+
+  5 : ( i -> x ) -> Validator x m e -> Validator i m ( Maybe e )
+  6 : ( i -> f x ) -> Validator x m e -> Validator i m ( Maybe f ( Maybe e ) )
+
+  As an input to 'check' I can have an element, or many elements
+  As a check, I can perform one check per element, or multiple checks per element
+  As output
+    If I have one element
+      And if I have one check
+        I get single error
+      And if I have multiple check
+        I get multiple errors
+    If I have multiple elements
+      And if I have one check
+        I get list of errors
+      And if I have multiple checks
+        I get list of lists of errors
+
+-}
+
+--------------------------------------------------------------------------------
+-- | Simple "tags" used in conjunction with the 'Validatable' type family.
+data Valor
+  = Simple
+  | Report
 
 --------------------------------------------------------------------------------
 -- | A simple type level function that is usefull to get rid of the boilerplate
@@ -106,45 +182,55 @@ data Validate e
 -- All in all, 'Validatable' is quite easy to understand, it takes around 5 min
 -- to understand this type family even if you've never used type families before
 -- , just take a look at the __Equations__ below:
-type family Validatable a e x where
-  Validatable Validate e x = Maybe e
-  Validatable Identity e x = x
-  Validatable a        e x = a x
+type family Validatable ( a :: Valor ) e x where
+  Validatable 'Simple e x = x
+  Validatable 'Report e x = Maybe e
 
+--
 
 --------------------------------------------------------------------------------
 -- | Type that is used to carry the errors within 'Validator'. It's meant to be
 -- used only internally.
-data Validated e = Neutral | Valid e | Invalid e
+data Validated e = Neutral | Sound e | Wrong e
   deriving ( Show )
 
 instance Semigroup e => Semigroup ( Validated e ) where
-  Neutral    <> x          = x
-  x          <> Neutral    = x
-  Valid   e1 <> Valid   e2 = Valid   $ e1 <> e2
-  Valid   e1 <> Invalid e2 = Invalid $ e1 <> e2
-  Invalid e1 <> Valid   e2 = Invalid $ e1 <> e2
-  Invalid e1 <> Invalid e2 = Invalid $ e1 <> e2
+  Neutral <> x       = x
+  x       <> Neutral = x
+  Sound a <> Sound b = Sound $ a <> b
+  Sound a <> Wrong b = Wrong $ a <> b
+  Wrong a <> Sound b = Wrong $ a <> b
+  Wrong a <> Wrong b = Wrong $ a <> b
 
 instance Semigroup e => Monoid ( Validated e ) where
   mempty  = Neutral
   mappend = (<>)
 
-instance Functor ( Validated ) where
-  fmap _ Neutral     = Neutral
-  fmap f (Valid e)   = Valid   $ f e
-  fmap f (Invalid e) = Invalid $ f e
+instance Functor Validated where
+  fmap _ Neutral   = Neutral
+  fmap f (Sound e) = Sound $ f e
+  fmap f (Wrong e) = Wrong $ f e
 
-instance Applicative ( Validated ) where
-  pure                     = Valid
-  Neutral    <*> _         = Neutral
-  _          <*> Neutral   = Neutral
-  Valid   fe <*> Invalid e = Invalid $ fe e
-  Valid   fe <*> Valid   e = Valid   $ fe e
-  Invalid fe <*> Valid   e = Invalid $ fe e
-  Invalid fe <*> Invalid e = Invalid $ fe e
+instance Applicative Validated where
+  pure                 = Sound
+  Neutral  <*> _       = Neutral
+  _        <*> Neutral = Neutral
+  Sound fe <*> Wrong e = Wrong $ fe e
+  Sound fe <*> Sound e = Sound $ fe e
+  Wrong fe <*> Sound e = Wrong $ fe e
+  Wrong fe <*> Wrong e = Wrong $ fe e
 
 --
+
+--------------------------------------------------------------------------------
+-- | In case the value has been successfuly validated and contains no errors, it
+-- will be returned wrapped in this @newtype@. Constructor for valid is not
+-- exported / public, so the @'Valid' a@ can only be constructed through the
+-- validation process, ensuring that you don't "accidentally" send invalid value
+-- where it shouldn't go.
+-- newtype Valid a = Valid
+--   { unValid :: a
+--   }
 
 --------------------------------------------------------------------------------
 -- | 'Validator' is basically a function that takes in an input @i@ and returns
@@ -206,7 +292,7 @@ instance ( Applicative m, Semigroup e ) => Semigroup ( Validator i m e ) where
   Validator x <> Validator y = Validator $ \i -> liftA2 (<>) (x i) (y i)
 
 instance ( Applicative m, Semigroup e ) => Monoid ( Validator i m e ) where
-  mempty  = Validator $ const (pure mempty)
+  mempty  = Validator $ const $ pure mempty
   mappend = (<>)
 
 instance Functor m => Functor ( Validator i m ) where
@@ -222,7 +308,7 @@ instance Applicative m => Applicative ( Validator i m ) where
 -- | Use this in case you are not interested in validating a certain field.
 skip :: Applicative m
   => Validator i m (Maybe e) -- ^ 'Validator' that never returns an error
-skip = Validator $ \i -> pure $ Valid Nothing
+skip = Validator $ \ _ -> pure $ pure Nothing
 
 
 --------------------------------------------------------------------------------
@@ -231,7 +317,7 @@ check :: forall i x m e. Monad m
   => (i -> x)                -- ^ field selector
   -> (x -> ExceptT e m x)    -- ^ field check
   -> Validator i m (Maybe e) -- ^ resulting 'Validator'
-check sel chk = Validator $ \i -> validateprep <$> checkprep (chk $ sel i)
+check = check'
 
 
 --------------------------------------------------------------------------------
@@ -244,9 +330,7 @@ mapCheck :: forall i f x m e. ( Monad m, Traversable f )
   => (i -> f x)                          -- ^ field selector
   -> (x -> ExceptT e m x)                -- ^ field check
   -> Validator i m (Maybe (f (Maybe e))) -- ^ resulting 'Validator'
-mapCheck sel chk = Validator $ \i -> do
-  res <- mapM (checkprep . chk) (sel i)
-  pure $ if any isJust res then Invalid $ Just res else Valid Nothing
+mapCheck = check'
 
 
 --------------------------------------------------------------------------------
@@ -257,8 +341,7 @@ checks :: forall i x m e. ( Monad m, Semigroup e )
   => (i -> x)                -- ^ field selector
   -> [x -> ExceptT e m x]    -- ^ list of field checks
   -> Validator i m (Maybe e) -- ^ resulting 'Validator'
-checks sel chks = Validator $ \i -> mconcat <$> mapM (mprep . ($ sel i)) chks
-
+checks = check'
 
 --------------------------------------------------------------------------------
 -- | Basically the same thing as 'mapCheck' but it allows you to run multiple
@@ -267,13 +350,7 @@ mapChecks :: forall i f x m e. ( Monad m, Traversable f, Monoid e )
   => (i -> f x)                          -- ^ field selector
   -> [x -> ExceptT e m x]                -- ^ list of field checks
   -> Validator i m (Maybe (f (Maybe e))) -- ^ resulting 'Validator'
-mapChecks sel chks = Validator $ \i -> do
-  res <- mapM (helper chks) (sel i)
-  pure $ if any isJust res then Invalid $ Just res else Valid Nothing
-  where
-    helper :: [x -> ExceptT e m x] -> x -> m (Maybe e)
-    helper chks x = mconcat <$> mapM checkprep (fmap ($x) chks)
-
+mapChecks = check'
 
 --------------------------------------------------------------------------------
 -- | Runs a custom made 'Validator' against the field data.
@@ -281,8 +358,7 @@ subValidator :: forall i x m e. Functor m
   => (i -> x)                -- ^ field selector
   -> Validator x m e         -- ^ custom field 'Validator'
   -> Validator i m (Maybe e) -- ^ resulting 'Validator'
-subValidator sel val = Validator $ \i ->
-  validateprep <$> validate val (sel i)
+subValidator = check'
 
 
 --------------------------------------------------------------------------------
@@ -292,9 +368,7 @@ mapSubValidator :: forall i f x m e. (Monad m, Traversable f)
   => (i -> f x)                          -- ^ field selector
   -> Validator x m e                     -- ^ custom field 'Validator'
   -> Validator i m (Maybe (f (Maybe e))) -- ^ resulting 'Validator'
-mapSubValidator sel val = Validator $ \i -> do
-  res <- mapM (validate val) (sel i)
-  pure $ if any isJust res then Invalid $ Just res else Valid Nothing
+mapSubValidator = check'
 
 --
 
@@ -306,7 +380,7 @@ validate :: Functor m
   => Validator i m e -- ^ 'Validator' to run against the input data
   -> i               -- ^ input data that you want to validate
   -> m (Maybe e)     -- ^ result of the validation
-validate (Validator v) i = fmap validatedtomaybe $ v i
+validate v i = fmap validatedtomaybe $ ( unValidator v ) i
 
 
 --------------------------------------------------------------------------------
@@ -339,13 +413,13 @@ checkprep :: Monad m => ExceptT e m x -> m (Maybe e)
 checkprep = fmap (either Just (const Nothing)) . runExceptT
 
 validateprep :: Maybe e -> Validated (Maybe e)
-validateprep (Just e) = Invalid $ Just e
-validateprep Nothing  = Valid   $ Nothing
+validateprep (Just e) = Wrong $ Just e
+validateprep Nothing  = Sound $ Nothing
 
 validatedtomaybe :: Validated e -> Maybe e
-validatedtomaybe Neutral     = Nothing
-validatedtomaybe (Valid e)   = Nothing
-validatedtomaybe (Invalid e) = Just e
+validatedtomaybe Neutral   = Nothing
+validatedtomaybe (Sound _) = Nothing
+validatedtomaybe (Wrong e) = Just e
 
 --------------------------------------------------------------------------------
 -- $introduction
