@@ -21,21 +21,18 @@ type family Validatable a e x where
 
 --
 
-data Status e = Neutral | Inert e | Wrong e
+data Status e = Inert e | Wrong e
 
 instance Semigroup e => Semigroup (Status e) where
-  Neutral <> x       = x
-  x       <> Neutral = x
   Inert _ <> x       = x
   x       <> Inert _ = x
   Wrong a <> Wrong b = Wrong $ a <> b
 
-instance Semigroup e => Monoid (Status e) where
-  mempty = Neutral
+instance Monoid e => Monoid (Status e) where
+  mempty = Inert mempty
   mappend = (<>)
 
 instance Functor Status where
-  fmap _ Neutral   = Neutral
   fmap f (Inert e) = Inert $ f e
   fmap f (Wrong e) = Wrong $ f e
 
@@ -46,14 +43,9 @@ instance Applicative Status where
   (Wrong f) <*> (Inert e) = Wrong $ f e
   (Wrong f) <*> (Wrong e) = Wrong $ f e
 
-instance Alternative Status where
-  empty = Neutral
-
-  Neutral  <|> x        = Neutral
-  x        <|> Neutral  = Neutral
-  Inert e  <|> x        = Inert e
-  x        <|> Inert e  = Inert e
-  Wrong _  <|> Wrong e  = Wrong e
+instance Monad Status where
+  Inert a >>= a_mb = a_mb a
+  Wrong a >>= a_mb = a_mb a
 
 --
 
@@ -64,8 +56,8 @@ newtype Validator i m e = Validator
 instance (Applicative m, Semigroup e) => Semigroup (Validator i m e) where
   Validator x <> Validator y = Validator $ \i -> liftA2 (<>) (x i) (y i)
 
-instance ( Applicative m , Semigroup e ) => Monoid (Validator i m e) where
-  mempty = Validator $ const $ pure Neutral
+instance ( Applicative m , Monoid e ) => Monoid (Validator i m e) where
+  mempty = Validator $ const $ pure mempty
   mappend = (<>)
 
 instance Functor m => Functor (Validator i m) where
@@ -75,29 +67,34 @@ instance Applicative m => Applicative (Validator i m) where
   pure = Validator . const . pure . pure
   Validator x <*> Validator y = Validator $ \i -> (<*>) <$> x i <*> y i
 
-instance Applicative m => Alternative (Validator i m) where
-  empty = Validator $ const $ pure Neutral
-  (Validator f1) <|> (Validator f2) = Validator $ \i -> liftA2 (<|>) (f1 i) (f2 i)
-
 instance Monad m => Monad (Validator i m) where
-  ma >>= a_mb = Validator $ \i -> unValidator ma i >>= \case
-    Neutral -> pure Neutral
-    Inert a -> unValidator ( a_mb a ) i
-    Wrong a -> unValidator ( a_mb a ) i
+  Validator v >>= a_mb = Validator $ \i -> v i >>= flip unValidator i . a_mb . stat
 
 --
 
-pass :: Applicative m => Validator i m e
-pass = Validator $ const $ pure Neutral
+pass :: (Monoid e, Applicative m) => Validator i m e
+pass = Validator $ const $ pure mempty
 
 fail :: Applicative m => e -> Validator i m e
 fail = Validator . const . pure . Wrong
 
 --
 
-newtype Valid a = Valid
-  { unValid :: a
-  }
+check :: (i -> x) -> Validator x m e -> Validator i m e
+check sel (Validator val) = Validator $ \i -> val $ sel i
 
--- check :: Monad m => ( i -> x ) -> ( x -> ExceptT e m x ) -> Validator i m e
--- check sel chk = Validator $ \i -> runExceptT ( chk $ sel i )
+mapCheck :: (Traversable f, Applicative m) => (i -> f x) -> Validator x m e -> Validator i m (f e)
+mapCheck sel (Validator val) = Validator $ \i -> do
+  let es = traverse val $ sel i :: _
+  undefined
+
+checks :: (Monoid e, Applicative m) => (i -> x) -> [Validator x m e] -> Validator i m e
+checks sel vals = check sel $ mconcat vals
+
+
+--
+
+stat :: Status e -> e
+stat (Inert e) = e
+stat (Wrong e) = e
+
