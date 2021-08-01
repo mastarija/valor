@@ -1,35 +1,37 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+--
 module Data.Valor where
 --
-import Data.Bifunctor (Bifunctor (..))
 import Control.Applicative (Alternative (..))
 --
 
-newtype Valid a = Valid
-  { unValid :: a
+newtype Valid v = Valid
+  { unValid :: v
   }
 
-instance Semigroup a => Semigroup (Valid a) where
+instance Semigroup v => Semigroup (Valid v) where
   Valid b <> Valid d = Valid $ b <> d
 
 instance Monoid a => Monoid (Valid a) where
   mempty = Valid mempty
 
 instance Functor Valid where
-  fmap f (Valid a) = Valid $ f a
+  fmap f (Valid v) = Valid $ f v
 
 instance Applicative Valid where
   pure = Valid
-  Valid f <*> Valid a = Valid $ f a
+  Valid f <*> Valid v = Valid $ f v
 
 --
 
-data Report e
+data Wrong e
   = Empty'
   | Amiss'
   | Inert' e
   | Wrong' e
 
-instance Semigroup e => Semigroup (Report e) where
+instance Semigroup e => Semigroup (Wrong e) where
   Empty'   <> r        = r
   r        <> Empty'   = r
 
@@ -45,15 +47,15 @@ instance Semigroup e => Semigroup (Report e) where
   Wrong' b <> Inert' d = Wrong' $ b <> d
   Wrong' b <> Wrong' d = Wrong' $ b <> d
 
-instance Monoid e => Monoid (Report e) where
+instance Monoid e => Monoid (Wrong e) where
   mempty = Inert' mempty
 
-instance Functor Report where
+instance Functor Wrong where
   fmap _ Empty'     = Empty'
   fmap f (Inert' e) = Inert' $ f e
   fmap f (Wrong' e) = Wrong' $ f e
 
-instance Applicative Report where
+instance Applicative Wrong where
   pure = Inert'
 
   Empty'   <*> Amiss'   = Amiss'
@@ -69,9 +71,8 @@ instance Applicative Report where
   Wrong' f <*> Inert' e = Wrong' $ f e
   Wrong' f <*> Wrong' e = Wrong' $ f e
 
-
-instance Alternative Report where
-  empty = Empty'
+instance Alternative Wrong where
+  empty = Amiss'
 
   Empty'   <|> Inert' e   = Inert' e
   Empty'   <|> _          = Empty'
@@ -85,23 +86,16 @@ instance Alternative Report where
   Wrong' _ <|> Inert' e   = Inert' e
   Wrong' _ <|> Wrong' e   = Wrong' e
 
-instance Monad Report where
-  re >>= e_rn = case re of
-    Empty'   -> Empty'
-    Amiss'   -> Amiss'
-    Inert' e -> e_rn e
-    Wrong' e -> e_rn e
-
 --
 
 newtype Validator m v e = Validator
-  { runValidator :: v -> m (Report e)
+  { runValidator :: v -> m (Wrong e)
   }
 
-instance (Applicative m, Semigroup v, Semigroup e) => Semigroup (Validator m v e) where
+instance (Applicative m, Semigroup e) => Semigroup (Validator m v e) where
   Validator b <> Validator d = Validator $ \v -> (<>) <$> (b v) <*> (d v)
 
-instance (Applicative m, Semigroup v, Monoid e) => Monoid (Validator m v e) where
+instance (Applicative m, Monoid e) => Monoid (Validator m v e) where
   mempty = Validator $ const $ pure mempty
 
 instance Functor m => Functor (Validator m v) where
@@ -111,6 +105,10 @@ instance Applicative m => Applicative (Validator m v) where
   pure = Validator . const . pure . pure
   Validator b <*> Validator d = Validator $ \v -> (<*>) <$> (b v) <*> (d v)
 
+instance Applicative m => Alternative (Validator m v) where
+  empty = Validator $ const $ pure Empty'
+  Validator b <|> Validator d = Validator $ \v -> (<|>) <$> (b v) <*> (d v)
+
 instance Monad m => Monad (Validator m v) where
   Validator ve >>= e_vn = Validator $ \v -> do
     re <- ve v
@@ -119,3 +117,42 @@ instance Monad m => Monad (Validator m v) where
       Amiss'   -> pure Amiss'
       Inert' e -> runValidator (e_vn e) v
       Wrong' e -> runValidator (e_vn e) v
+
+--
+
+passV :: (Applicative m, Monoid e) => Validator m v e
+passV = Validator $ const $ pure $ mempty
+
+failV :: Applicative m => e -> Validator m v e
+failV = Validator . const . pure . Wrong'
+
+turnM :: (Functor m, Monoid e) => Validator m v e -> Validator m v (Maybe e)
+turnM (Validator val) = Validator $ \v -> flip fmap (val v) $ \re -> case re of
+  Empty'   -> Inert' $ Nothing
+  Amiss'   -> Wrong' $ Just mempty
+  Inert' e -> Inert' $ Nothing
+  Wrong' e -> Inert' $ Just e
+
+turnE :: (Functor m, Monoid e) => Validator m v e -> Validator m v (Either (Valid v) e)
+turnE (Validator val) = Validator $ \v -> flip fmap (val v) $ \re -> case re of
+  Empty'   -> Inert' $ Left $ Valid v
+  Amiss'   -> Wrong' $ Right mempty
+  Inert' e -> Inert' $ Left $ Valid v
+  Wrong' e -> Inert' $ Right e
+
+--
+
+class Check f v o where
+  check :: f -> v -> o
+
+instance (Functor m, Monoid e) => Check (v -> x) (Validator m x e) (Validator m v (Maybe e)) where
+  check sel val = turnM $ Validator $ \v -> runValidator val $ sel v
+
+instance (Applicative m, Monoid e) => Check (v -> x) [Validator m x e] (Validator m v (Maybe e)) where
+  check sel vals = check sel $ mconcat vals
+
+instance (Traversable t, Applicative m, Monoid e, Monoid (t (Maybe e))) => Check (v -> t x) (Validator m x e) (Validator m v (Maybe (t (Maybe e)))) where
+  check sel val = turnM $ Validator $ \v -> sequenceA <$> traverse (runValidator $ turnM val) (sel v)
+
+instance (Traversable t, Applicative m, Monoid e, Monoid (t (Maybe e))) => Check (v -> t x) [Validator m x e] (Validator m v (Maybe (t (Maybe e)))) where
+  check sel vals = check sel $ mconcat vals
