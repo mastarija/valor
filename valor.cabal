@@ -32,6 +32,7 @@ common core
 
 library
   import            : core
+  build-depends     : semigroupoids
   hs-source-dirs    : lib
   exposed-modules   : Data.Valor
 

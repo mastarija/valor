@@ -1,66 +1,44 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
---
-module Data.Valor
-  ( Valid
-  , Validator
-  , check
-  , passV
-  , failV
-  , poolV
-  , boolV
-  , turnM
-  , turnE
-  )
-  where
---
-import Data.Bool (bool)
+module Data.Valor where
 --
 
 newtype Valid v = Valid
   { unValid :: v
   }
 
-instance Semigroup v => Semigroup (Valid v) where
-  Valid b <> Valid d = Valid $ b <> d
-
-instance Monoid a => Monoid (Valid a) where
-  mempty = Valid mempty
-
-instance Functor Valid where
-  fmap f (Valid v) = Valid $ f v
-
-instance Applicative Valid where
-  pure = Valid
-  Valid f <*> Valid v = Valid $ f v
-
 --
 
-data Wrong e
-  = Inert e
-  | Wrong e
+data Wrong e = Inert e | Wrong e
 
 instance Semigroup e => Semigroup (Wrong e) where
-  Inert b <> Inert d = Inert $ b <> d
-  Inert b <> Wrong d = Wrong $ b <> d
-  Wrong b <> Inert d = Wrong $ b <> d
   Wrong b <> Wrong d = Wrong $ b <> d
+  Wrong e <> Inert _ = Wrong e
+  Inert _ <> Wrong e = Wrong e
+  Inert e <> Inert _ = Inert e
 
 instance Monoid e => Monoid (Wrong e) where
   mempty = Inert mempty
 
 instance Functor Wrong where
-  fmap f (Inert e) = Inert $ f e
   fmap f (Wrong e) = Wrong $ f e
+  fmap f (Inert e) = Inert $ f e
 
 instance Applicative Wrong where
   pure = Inert
 
-  Inert f <*> Inert e = Inert $ f e
-  Inert f <*> Wrong e = Wrong $ f e
-  Wrong f <*> Inert e = Wrong $ f e
   Wrong f <*> Wrong e = Wrong $ f e
+  Wrong f <*> Inert e = Wrong $ f e
+  Inert f <*> Wrong e = Wrong $ f e
+  Inert f <*> Inert e = Inert $ f e
+
+altOW :: Wrong e -> Wrong e -> Wrong e
+altOW (Inert e) _         = Inert e
+altOW _         (Inert e) = Inert e
+altOW (Wrong _) (Wrong e) = Wrong e
+
+altMW :: Semigroup e => Wrong e -> Wrong e -> Wrong e
+altMW (Inert e) _         = Inert e
+altMW _         (Inert e) = Inert e
+altMW (Wrong b) (Wrong d) = Wrong $ b <> d
 
 --
 
@@ -81,44 +59,13 @@ instance Applicative m => Applicative (Validator m v) where
   pure = Validator . const . pure . pure
   Validator b <*> Validator d = Validator $ \v -> (<*>) <$> (b v) <*> (d v)
 
-instance Monad m => Monad (Validator m v) where
-  Validator val >>= e_wc = Validator $ \v -> val v >>= \we -> case we of
-    Inert e -> runValidator (e_wc e) v
-    Wrong e -> runValidator (e_wc e) v
-
 --
 
-pickV :: Monad m => Validator m v e -> Validator m v e -> Validator m v e
-(Validator b) `pickV` (Validator d) = Validator $ \v -> do
-  wb <- b v
-  wd <- d v
-  pure $ case (wb, wd) of
-    (Inert e, _) -> Inert e
-    (Wrong _, w) -> w
+altOV :: Applicative m => Validator m v e -> Validator m v e -> Validator m v e
+altOV (Validator b) (Validator d) = Validator $ \v -> altOW <$> (b v) <*> (d v)
 
-pickV' :: (Monad m, Semigroup e) => Validator m v e -> Validator m v e -> Validator m v e
-(Validator b) `pickV'` (Validator d) = Validator $ \v -> do
-  wb <- b v
-  wd <- d v
-  pure $ case (wb, wd) of
-    (Inert b, Inert d) -> Inert $ b <> d
-    (Inert b, Wrong _) -> Inert b
-    (Wrong b, Inert d) -> Inert d
-    (Wrong b, Wrong d) -> Wrong $ b <> d
-
-caseV :: Monad m => Validator m v e -> Validator m v e -> Validator m v e -> Validator m v e
-caseV (Validator p) (Validator b) (Validator d) = Validator $ \v -> do
-  wp <- p v
-  case wp of
-    Inert _ -> (d v)
-    Wrong _ -> (b v)
-
-caseV' :: (Monad m, Semigroup e) => Validator m v e -> Validator m v e -> Validator m v e -> Validator m v e
-caseV' (Validator p) (Validator b) (Validator d) = Validator $ \v -> do
-  wp <- p v
-  case wp of
-    Inert _ -> (<>) <$> (pure wp) <*> (d v)
-    Wrong _ -> (<>) <$> (pure wp) <*> (b v)
+altMV :: (Applicative m, Semigroup e) => Validator m v e -> Validator m v e -> Validator m v e
+altMV (Validator b) (Validator d) = Validator $ \v -> altMW <$> (b v) <*> (d v)
 
 --
 
@@ -128,69 +75,40 @@ passV = mempty
 failV :: Applicative m => e -> Validator m v e
 failV = Validator . const . pure . Wrong
 
---
-
-poolV :: Monad m => (v -> Bool ) -> Validator m v e -> Validator m v e -> Validator m v e
-poolV p = boolV $ pure . p
-
-boolV :: Monad m => (v -> m Bool) -> Validator m v e -> Validator m v e -> Validator m v e
-boolV p b d = Validator $ \v -> p v >>= flip runValidator v . bool b d
+makeV :: (Functor m, Monoid e) => (v -> m (Maybe e)) -> Validator m v e
+makeV c = Validator $ \v -> flip fmap (c v) $ \me -> case me of
+  Nothing -> Inert mempty
+  Just e  -> Wrong e
 
 --
 
-turnM :: (Functor m, Monoid e) => Validator m v e -> Validator m v (Maybe e)
-turnM (Validator val) = Validator $ \v -> flip fmap (val v) $ \re -> case re of
-  Inert e -> Inert $ Nothing
+testV :: Monad m => Validator m v e -> Validator m v e -> (v -> m Bool) -> Validator m v e
+testV (Validator b) (Validator d) p = Validator $ \v -> p v >>= \c -> if not c then (b v) else (d v)
+
+caseV :: Monad m => Validator m v e -> Validator m v e -> Validator m v e -> Validator m v e
+caseV (Validator b) (Validator d) (Validator p) = Validator $ \v -> do
+  vp <- p v
+  case vp of
+    Inert _ -> d v
+    Wrong _ -> b v
+
+scanV :: (Monad m, Monoid e) => Validator m v e -> Validator m v e -> Validator m v e -> Validator m v e
+scanV (Validator b) (Validator d) (Validator p) = Validator $ \v -> do
+  vp <- p v
+  (<>) <$> (pure vp) <*> case vp of
+    Inert _ -> d v
+    Wrong _ -> b v
+
+--
+
+turnM :: Functor m => Validator m v e -> Validator m v (Maybe e)
+turnM (Validator val) = Validator $ \v -> flip fmap (val v) $ \we -> case we of
+  Inert _ -> Inert $ Nothing
   Wrong e -> Wrong $ Just e
 
-turnE :: (Functor m, Monoid e) => Validator m v e -> Validator m v (Either (Valid v) e)
-turnE (Validator val) = Validator $ \v -> flip fmap (val v) $ \re -> case re of
-  Inert e -> Inert $ Left $ Valid v
+turnE :: Functor m => Validator m v e -> Validator m v (Either (Valid v) e)
+turnE (Validator val) = Validator $ \v -> flip fmap (val v) $ \we -> case we of
+  Inert _ -> Inert $ Left (Valid v)
   Wrong e -> Wrong $ Right e
 
 --
-
-class Check f v o where
-  check :: f -> v -> o
-
-instance (Functor m, Monoid e) =>
-  Check (v -> x) (Validator m x e) (Validator m v (Maybe e)) where
-  check sel val = turnM $ Validator $ \v -> runValidator val $ sel v
-
-instance (Applicative m, Monoid e) =>
-  Check (v -> x) [Validator m x e] (Validator m v (Maybe e)) where
-  check sel vals = check sel $ mconcat vals
-
-instance (Traversable t, Applicative m, Monoid e, Monoid (t (Maybe e))) =>
-  Check (v -> t x) (Validator m x e) (Validator m v (Maybe (t (Maybe e)))) where
-  check sel val = turnM $ Validator $ \v -> sequenceA <$> traverse (runValidator $ turnM val) (sel v)
-
-instance (Traversable t, Applicative m, Monoid e, Monoid (t (Maybe e))) =>
-  Check (v -> t x) [Validator m x e] (Validator m v (Maybe (t (Maybe e)))) where
-  check sel vals = check sel $ mconcat vals
-
-instance forall m v e c x. (Applicative m, Applicative c, Monoid (c e) )
-  => Check (v -> x) [Validator m x e] (Validator m v (Maybe (c e))) where
-  check sel vals = check sel $ (((fmap pure) <$> vals) :: [Validator m x (c e)])
-
-instance forall m v e t c x. (Applicative m, Applicative c, Traversable t, Monoid (c e), (Monoid (t (Maybe (c e))))) =>
-  Check (v -> t x) [Validator m x e] (Validator m v (Maybe (t (Maybe (c e))))) where
-  check sel vals = check sel $ (((fmap pure) <$> vals) :: [Validator m x (c e)])
-
---
-
-data Cred = Cred
-  { username :: UserName
-  , password :: PassWord
-  }
-
-newtype UserName = UserName
-  { unUserName :: String
-  }
-
-newtype PassWord = PassWord
-  { unPassWord :: String
-  }
-
-usernameV :: Validator m UserName String
-usernameV = undefined
