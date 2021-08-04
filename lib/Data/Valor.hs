@@ -1,44 +1,17 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+--
 module Data.Valor where
+--
+import Data.Maybe (isJust)
+import Data.Functor.Identity (Identity (..))
+--
+import Data.Valor.Internal
 --
 
 newtype Valid v = Valid
   { unValid :: v
   }
-
---
-
-data Wrong e = Inert e | Wrong e
-
-instance Semigroup e => Semigroup (Wrong e) where
-  Wrong b <> Wrong d = Wrong $ b <> d
-  Wrong e <> Inert _ = Wrong e
-  Inert _ <> Wrong e = Wrong e
-  Inert e <> Inert _ = Inert e
-
-instance Monoid e => Monoid (Wrong e) where
-  mempty = Inert mempty
-
-instance Functor Wrong where
-  fmap f (Wrong e) = Wrong $ f e
-  fmap f (Inert e) = Inert $ f e
-
-instance Applicative Wrong where
-  pure = Inert
-
-  Wrong f <*> Wrong e = Wrong $ f e
-  Wrong f <*> Inert e = Wrong $ f e
-  Inert f <*> Wrong e = Wrong $ f e
-  Inert f <*> Inert e = Inert $ f e
-
-altOW :: Wrong e -> Wrong e -> Wrong e
-altOW (Inert e) _         = Inert e
-altOW _         (Inert e) = Inert e
-altOW (Wrong _) (Wrong e) = Wrong e
-
-altMW :: Semigroup e => Wrong e -> Wrong e -> Wrong e
-altMW (Inert e) _         = Inert e
-altMW _         (Inert e) = Inert e
-altMW (Wrong b) (Wrong d) = Wrong $ b <> d
 
 --
 
@@ -101,14 +74,44 @@ scanV (Validator b) (Validator d) (Validator p) = Validator $ \v -> do
 
 --
 
-turnM :: Functor m => Validator m v e -> Validator m v (Maybe e)
-turnM (Validator val) = Validator $ \v -> flip fmap (val v) $ \we -> case we of
-  Inert _ -> Inert $ Nothing
-  Wrong e -> Wrong $ Just e
+class Check f v o where
+  check :: f -> v -> o
 
-turnE :: Functor m => Validator m v e -> Validator m v (Either (Valid v) e)
-turnE (Validator val) = Validator $ \v -> flip fmap (val v) $ \we -> case we of
-  Inert _ -> Inert $ Left (Valid v)
-  Wrong e -> Wrong $ Right e
+instance Functor m =>
+  Check (v -> x) (Validator m x e) (Validator m v (Maybe e)) where
+  check sel val = Validator $ \v -> runValidator (go val) (sel v)
+    where
+    go :: Functor m => Validator m v e -> Validator m v (Maybe e)
+    go (Validator vl) = Validator $ \v -> flip fmap (vl v) $ \we -> case we of
+      Inert _ -> Inert $ Nothing
+      Wrong e -> Wrong $ Just e
+
+instance (Applicative m, Monoid e) =>
+  Check (v -> x) [Validator m x e] (Validator m v (Maybe e)) where
+  check sel = check sel . mconcat
+
+instance (Applicative m, Traversable t) =>
+  Check (v -> t x) (Validator m x e) (Validator m v (Maybe (t (Maybe e)))) where
+  check sel (Validator val) = Validator $ fmap (go2 . go1) . traverse val . sel
+    where
+      go1 ws = flip fmap ws $ \w -> case w of
+        Inert _ -> Nothing
+        Wrong e -> Just e
+
+      go2 ms
+        | all isJust ms = Inert Nothing
+        | otherwise     = Wrong $ Just ms
+
+instance (Applicative m, Traversable t, Monoid e) =>
+  Check (v -> t x) [Validator m x e] (Validator m v (Maybe (t (Maybe e)))) where
+  check sel = check sel . mconcat
 
 --
+
+validateM :: Functor m => Validator m v e -> v -> m (Either (Valid v) e)
+validateM val v = flip fmap (runValidator val v) $ \w -> case w of
+  Inert _ -> Left $ Valid v
+  Wrong e -> Right e
+
+validateP :: Validator Identity v e -> v -> Either (Valid v) e
+validateP val = runIdentity . validateM val
