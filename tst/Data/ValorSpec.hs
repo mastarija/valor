@@ -79,6 +79,52 @@ spec = do
           (True, False) -> Right $ ["error 3"]
           (False, False) -> Right $ ["error 1", "error 2"]
 
+  describe "oneCheck" $ do
+    prop "should fail if value is under 18" $ \n ->
+      let
+        e = ["must be greater than 18"]
+      in
+        shouldBe
+          (validateP (oneCheck id nonover18) n)
+          (bool (Left $ Valid n) (Right $ Just e) (n < 18))
+
+  describe "oneChecks" $ do
+    prop "should test multiple rules and fail if any of them fail" $ \s ->
+      let
+        e  = (bool mempty e1 (null s)) <> (bool mempty e2 (length s < 10))
+        e1 = ["can't be empty"]
+        e2 = ["too short"]
+      in
+        shouldBe
+          (validateP (oneChecks id [nonempty, nonshort]) s)
+          (bool (Left $ Valid s) (Right $ Just e) (e /= mempty))
+
+  describe "mapCheck" $ do
+    prop "should test a single rule over a list of subjects" $ \(ns::[Int]) ->
+      let
+        e  = ["must be greater than 18"]
+        es = fmap (bool Nothing (Just e) . (<18)) ns
+      in
+        shouldBe
+          (validateP (mapCheck id nonover18) ns)
+          (bool (Left $ Valid ns) (Right $ Just es) (any (<18) ns))
+
+  describe "mapChecks" $ do
+    prop "should test multiple rules over a list of subjects" $ \(ss::[String]) ->
+      let
+        ef = \s ->
+          let
+            es' = (bool mempty e1 (null s)) <> (bool mempty e2 (length s < 10))
+          in
+            bool Nothing (Just es') (es' /= mempty)
+        e1 = ["can't be empty"]
+        e2 = ["too short"]
+        es = fmap ef ss
+      in
+        shouldBe
+          (validateP (mapChecks id [nonempty, nonshort]) ss)
+          (bool (Left $ Valid ss) (Right $ Just es) (any (/=mempty) es))
+
 {- CORE TESTS -}
 
 -- newtype Test a = Test { payload :: a }
@@ -119,91 +165,93 @@ data UserError = UserError
   , eusername :: Maybe [String]
   } deriving (Eq, Show)
 
-userValidator :: forall m. Monad m => Validator m User UserError
+userValidator :: Monad m => Validator m User UserError
 userValidator = UserError
-  <$> check email (nonempty @m)
-  <*> check username [nonempty @m, nonbollocks, nonshort]
+  <$> check email nonempty
+  <*> check username (mconcat [nonempty, nonbollocks, nonshort])
 
--- badUser :: User
--- badUser = User "boaty@mcboatface.com" "bollocks"
+badUser :: User
+badUser = User "boaty@mcboatface.com" "bollocks"
 
--- badUserError :: UserError
--- badUserError = User Nothing $ Just ["can't be bollocks", "too short"]
+badUserError :: UserError
+badUserError = UserError Nothing $ Just ["can't be bollocks", "too short"]
 
--- goodUser :: User
--- goodUser = User "hello@kitty.com" "kittyusername"
+goodUser :: User
+goodUser = User "hello@kitty.com" "kittyusername"
 
 --
 
--- data Article' a = Article
---   { id      :: Validatable a String            Int
---   , title   :: Validatable a [String]          Text
---   , content :: Validatable a [String]          Text
---   , tags1   :: Validatable a [Maybe [String]]  [Text]
---   , tags2   :: Validatable a [Maybe String]    [Text]
---   , author  :: Validatable a UserError         User
---   , authors :: Validatable a [Maybe UserError] [User]
---   }
+data Article = Article
+  { aid     :: Int
+  , title   :: String
+  , content :: String
+  , tags1   :: [String]
+  , tags2   :: [String]
+  , author  :: User
+  , authors :: [User]
+  } deriving (Eq, Show)
 
--- type Article = Article' 'Simple
--- deriving instance Eq   Article
--- deriving instance Show Article
+data ArticleError = ArticleError
+  { eaid     :: Maybe [String]
+  , etitle   :: Maybe [String]
+  , econtent :: Maybe [String]
+  , etags1   :: Maybe [Maybe [String]]
+  , etags2   :: Maybe [Maybe [String]]
+  , eauthor  :: Maybe UserError
+  , eauthors :: Maybe [Maybe UserError]
+  } deriving (Eq, Show)
 
--- type ArticleError = Article' 'Report
--- deriving instance Eq   ArticleError
--- deriving instance Show ArticleError
+articleValidator :: Monad m => Validator m Article ArticleError
+articleValidator = ArticleError
+  <$> check aid     nonover18
+  <*> check title   (mconcat [nonempty, nonbollocks])
+  <*> check content (mconcat [nonempty, nonshort, nonbollocks])
+  <*> check tags1   (mconcat [nonempty, nonbollocks])
+  <*> check tags2   nonempty
+  <*> check author  userValidator
+  <*> check authors userValidator
 
--- articleValidator :: Monad m => Validator Article m ArticleError
--- articleValidator = Article
---   <$> chk id      nonover18
---   <*> chk title   [nonempty, nonbollocks]
---   <*> chk content [nonempty, nonshort, nonbollocks]
---   <*> chk tags1   [nonempty, nonbollocks]
---   <*> chk tags2   nonempty'
---   <*> chk author  userValidator
---   <*> chk authors userValidator
+badArticle :: Article
+badArticle = Article
+  { aid     = 17
+  , title   = ""
+  , content = "bollocks"
+  , tags1   = ["", "tag01", "tag02"]
+  , tags2   = ["tag01", ""]
+  , author  = badUser
+  , authors = [badUser, goodUser]
+  }
 
--- badArticle :: Article
--- badArticle = Article
---   { id      = 17
---   , title   = ""
---   , content = "bollocks"
---   , tags1   = ["", "tag01", "tag02"]
---   , tags2   = ["tag01", ""]
---   , author  = badUser
---   , authors = [badUser, goodUser]
---   }
+badArticleError :: ArticleError
+badArticleError = ArticleError
+  { eaid     = Just ["must be greater than 18"]
+  , etitle   = Just ["can't be empty"]
+  , econtent = Just ["too short", "can't be bollocks"]
+  , etags1   = Just [Just ["can't be empty"], Nothing, Nothing]
+  , etags2   = Just [Nothing, Just ["can't be empty"]]
+  , eauthor  = Just badUserError
+  , eauthors = Just [Just badUserError, Nothing]
+  }
 
--- badArticleError :: ArticleError
--- badArticleError = Article
---   { id      = Just "must be greater than 18"
---   , title   = Just ["can't be empty"]
---   , content = Just ["too short", "can't be bollocks"]
---   , tags1   = Just [Just ["can't be empty"], Nothing, Nothing]
---   , tags2   = Just [Nothing, Just "can't be empty"]
---   , author  = Just badUserError
---   , authors = Just [Just badUserError, Nothing]
---   }
-
--- goodArticle :: Article
--- goodArticle = Article
---   { id      = 19
---   , title   = "This is a dumb title!"
---   , content = "Even dumber content, let's include some lipsum : Lorem ipsum dolor sit amet, consectetur adipisicing elit."
---   , tags1   = ["tag01", "tag02"]
---   , tags2   = ["tag01", "tag02"]
---   , author  = goodUser
---   , authors = [goodUser, goodUser]
---   }
+goodArticle :: Article
+goodArticle = Article
+  { aid      = 19
+  , title   = "This is a dumb title!"
+  , content = "Even dumber content, let's include some lipsum : Lorem ipsum dolor sit amet, consectetur adipisicing elit."
+  , tags1   = ["tag01", "tag02"]
+  , tags2   = ["tag01", "tag02"]
+  , author  = goodUser
+  , authors = [goodUser, goodUser]
+  }
 
 --
 
 {- BASIC FIELD TESTS -}
 
-nonover18 :: Applicative m => Validator m Int [String]
+nonover18 :: Monad m => Validator m Int [String]
 nonover18 = makeV $ pure . \n -> bool
-  (Just ["must be greater than 18"])
   Nothing
+  (Just ["must be greater than 18"])
   (n < 18)
 
 nonempty :: Monad m => Validator m String [String]

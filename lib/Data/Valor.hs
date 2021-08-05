@@ -1,11 +1,10 @@
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 --
 module Data.Valor where
 --
-import Data.Maybe (isJust)
+import Data.Maybe (isNothing)
 import Data.Functor.Identity (Identity (..))
 --
 import Data.Valor.Internal
@@ -21,36 +20,36 @@ newtype Validator m v e = Validator
   { runValidator :: v -> m (Wrong e)
   }
 
-instance (Applicative m, Semigroup e) => Semigroup (Validator m v e) where
+instance (Monad m, Semigroup e) => Semigroup (Validator m v e) where
   Validator b <> Validator d = Validator $ \v -> (<>) <$> (b v) <*> (d v)
 
-instance (Applicative m, Monoid e) => Monoid (Validator m v e) where
+instance (Monad m, Monoid e) => Monoid (Validator m v e) where
   mempty = Validator $ const $ pure mempty
 
-instance Functor m => Functor (Validator m v) where
+instance Monad m => Functor (Validator m v) where
   fmap f (Validator val) = Validator $ \v -> (fmap f) <$> (val v)
 
-instance Applicative m => Applicative (Validator m v) where
+instance Monad m => Applicative (Validator m v) where
   pure = Validator . const . pure . pure
   Validator b <*> Validator d = Validator $ \v -> (<*>) <$> (b v) <*> (d v)
 
 --
 
-altOV :: Applicative m => Validator m v e -> Validator m v e -> Validator m v e
+altOV :: Monad m => Validator m v e -> Validator m v e -> Validator m v e
 altOV (Validator b) (Validator d) = Validator $ \v -> altOW <$> (b v) <*> (d v)
 
-altMV :: (Applicative m, Semigroup e) => Validator m v e -> Validator m v e -> Validator m v e
+altMV :: (Monad m, Semigroup e) => Validator m v e -> Validator m v e -> Validator m v e
 altMV (Validator b) (Validator d) = Validator $ \v -> altMW <$> (b v) <*> (d v)
 
 --
 
-passV :: (Applicative m, Monoid e) => Validator m v e
+passV :: (Monad m, Monoid e) => Validator m v e
 passV = mempty
 
-failV :: Applicative m => e -> Validator m v e
+failV :: Monad m => e -> Validator m v e
 failV = Validator . const . pure . Wrong
 
-makeV :: (Functor m, Monoid e) => (v -> m (Maybe e)) -> Validator m v e
+makeV :: (Monad m, Monoid e) => (v -> m (Maybe e)) -> Validator m v e
 makeV c = Validator $ \v -> flip fmap (c v) $ \me -> case me of
   Nothing -> Inert mempty
   Just e  -> Wrong e
@@ -80,24 +79,17 @@ scanV (Validator b) (Validator d) (Validator p) = Validator $ \v -> do
 
 --
 
-class Check f v o where
-  check :: f -> v -> o
+class Check v x i e o where
+  check :: Monad m => (v -> x) -> Validator m i e -> Validator m v o
 
-instance forall m v x e. Functor m =>
-  Check (v -> x) (Validator m x e) (Validator m v (Maybe e)) where
+instance Check v x x e (Maybe e) where
   check sel val = Validator $ \v -> runValidator (go val) (sel v)
     where
-    go :: Functor m => Validator m x e -> Validator m x (Maybe e)
-    go (Validator vl) = Validator $ \v -> flip fmap (vl v) $ \we -> case we of
-      Inert _ -> Inert $ Nothing
-      Wrong e -> Wrong $ Just e
+      go (Validator vl) = Validator $ \v -> flip fmap (vl v) $ \we -> case we of
+        Inert _ -> Inert $ Nothing
+        Wrong e -> Wrong $ Just e
 
-instance forall m v x e. (Applicative m, Monoid e) =>
-  Check (v -> x) [Validator m x e] (Validator m v (Maybe e)) where
-  check sel = check sel . mconcat
-
-instance forall m v x t e. (Applicative m, Traversable t) =>
-  Check (v -> t x) (Validator m x e) (Validator m v (Maybe (t (Maybe e)))) where
+instance Traversable t => Check v (t x) x e (Maybe (t (Maybe e))) where
   check sel (Validator val) = Validator $ fmap (go2 . go1) . traverse val . sel
     where
       go1 ws = flip fmap ws $ \w -> case w of
@@ -105,12 +97,20 @@ instance forall m v x t e. (Applicative m, Traversable t) =>
         Wrong e -> Just e
 
       go2 ms
-        | all isJust ms = Inert Nothing
-        | otherwise     = Wrong $ Just ms
+        | all isNothing ms = Inert Nothing
+        | otherwise        = Wrong $ Just ms
 
-instance (Applicative m, Traversable t, Monoid e) =>
-  Check (v -> t x) [Validator m x e] (Validator m v (Maybe (t (Maybe e)))) where
-  check sel = check sel . mconcat
+oneCheck :: Monad m => (v -> x) -> Validator m x e -> Validator m v (Maybe e)
+oneCheck = check
+
+oneChecks :: (Monad m, Monoid e) => (v -> x) -> [Validator m x e] -> Validator m v (Maybe e)
+oneChecks sel vals = check sel $ mconcat vals
+
+mapCheck :: (Monad m, Traversable t) => (v -> t x) -> Validator m x e -> Validator m v (Maybe (t (Maybe e)))
+mapCheck = check
+
+mapChecks :: (Monad m, Traversable t, Monoid e) => (v -> t x) -> [Validator m x e] -> Validator m v (Maybe (t (Maybe e)))
+mapChecks sel = check sel . mconcat
 
 --
 
@@ -122,28 +122,3 @@ validateM val v = flip fmap (runValidator val v) $ \w -> case w of
 validateP :: Validator Identity v e -> v -> Either (Valid v) e
 validateP val = runIdentity . validateM val
 
---
-
-data User = User
-  { email    :: String
-  , username :: String
-  } deriving (Eq, Show)
-
-data UserError = UserError
-  { eemail    :: Maybe [String]
-  , eusername :: Maybe [String]
-  } deriving (Eq, Show)
-
-userValidator :: forall m. Monad m => Validator m User UserError
-userValidator = UserError
-  <$> check email nonempty
-  <*> check username [nonempty, nonbollocks, nonshort]
-
-nonempty :: Monad m => Validator m String [String]
-nonempty = testV passV (failV ["can't be empty"]) $ pure . null
-
-nonbollocks :: Monad m => Validator m String [String]
-nonbollocks = testV passV (failV ["can't be bollocks"]) $ pure . (=="bollocks")
-
-nonshort :: Monad m => Validator m String [String]
-nonshort = testV passV (failV ["too short"]) $ pure . ((<10) . length)
