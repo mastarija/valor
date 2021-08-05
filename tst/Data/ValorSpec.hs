@@ -1,92 +1,83 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
 --
 module Data.ValorSpec where
 --
-import Prelude hiding ( id )
---
 import Data.Valor
 import Data.Valor.Internal
-import Data.Functor.Identity ( Identity (..) )
 --
-import Test.Hspec ( Spec, describe, it, shouldBe )
+import Data.Bool (bool)
+import Data.List (intercalate)
+import Data.Functor.Identity (Identity (..))
+--
+import Test.Hspec (Spec, describe, it, shouldBe)
+import Test.Hspec.QuickCheck (prop)
 --
 
 spec :: Spec
 spec = do
-  undefined
-  {-
-  describe "skip" $ do
-    it "should return 'Nothing'" $
-      validatePure skipTest (Test "test") `shouldBe`
-        Nothing
-  describe "check" $ do
-    it "should return 'Nothing'" $
-      validatePure checkTest (Test $ 19) `shouldBe`
-        Nothing
-    it "should return an error" $
-      validatePure checkTest (Test $ 11) `shouldBe`
-        Just (Test $ Just "must be greater than 18")
-  describe "mapCheck" $ do
-    it "should return 'Nothing'" $
-      validatePure mapCheckTest (Test $ ["hello", "again"]) `shouldBe`
-        Nothing
-    it "should return an error" $
-      validatePure mapCheckTest (Test $ ["", "hello", "", "again"]) `shouldBe`
-        Just (Test $ Just [Just "can't be empty", Nothing, Just "can't be empty", Nothing])
-  describe "checks" $ do
-    it "should return 'Nothing'" $
-      validatePure checksTest (Test "I'm super ok for now!") `shouldBe`
-        Nothing
-    it "should return an error" $
-      validatePure checksTest (Test "bollocks") `shouldBe`
-        Just (Test $ Just ["can't be bollocks", "too short"])
-  describe "mapChecks" $ do
-    it "should return 'Nothing'" $
-      validatePure mapChecksTest (Test ["Hello", "world"]) `shouldBe`
-        Nothing
-    it "should return an error" $
-      validatePure mapChecksTest (Test ["", "bollocks", "ok"]) `shouldBe`
-        Just (Test $ Just [Just ["can't be empty"], Just ["can't be bollocks"], Nothing])
-  describe "subValidator" $ do
-    it "should return 'Nothing'" $ do
-      validatePure subValidatorTest (Test goodUser) `shouldBe`
-        Nothing
-    it "should return an error" $ do
-      validatePure subValidatorTest (Test badUser) `shouldBe`
-        Just (Test $ Just badUserError)
-  describe "mapSubValidator" $ do
-    it "should return 'Nothing'" $ do
-      validatePure mapSubValidatorTest (Test [goodUser, goodUser]) `shouldBe`
-        Nothing
-    it "should return an error" $ do
-      validatePure mapSubValidatorTest (Test [goodUser, badUser]) `shouldBe`
-        Just (Test $ Just [Nothing, Just badUserError])
-  describe "validate 'Article'" $ do
-    it "should return 'Nothing'" $ do
-      validatePure articleValidator goodArticle `shouldBe`
-        Nothing
-    it "should return an error" $ do
-      validatePure articleValidator badArticle `shouldBe`
-        Just badArticleError
-  describe "validate 'User'" $ do
-    it "should return 'Nothing'" $ do
-      validatePure userValidator goodUser `shouldBe`
-        Nothing
-    it "should return an error" $ do
-      validatePure userValidator badUser `shouldBe`
-        Just badUserError
-  -}
+  describe "passV" $ do
+    prop "should return any value as 'Left' and 'Valid'" $ \v ->
+      validateP (passV @_ @String @[String]) v `shouldBe` Left (Valid v)
 
---
+  describe "failV" $ do
+    prop "should return the error as 'Right' for any value" $ \v e ->
+      validateP (failV @_ @String @[String] [e]) v `shouldBe` Right [e]
 
-failTest :: Validator m v e
-failTest = undefined
+  describe "makeV" $ do
+    prop "should fail if string length is out of bounds" $ \(v::String) (n::Int) (d::Int) ->
+      let
+        lo = abs n
+        hi = lo + (abs d)
+        ln = length v
+        er = "not between " <> show lo <> " and " <> show hi <> ": "
+        ad = \l -> intercalate "<" $ fmap show [lo, l, hi]
+        pr = \v' ->
+          let
+            l = length v'
+          in
+            if
+              l >= lo && l <= hi
+            then
+              Nothing
+            else
+              Just [er <> ad l]
+      in
+        validateP (makeV ( pure . pr )) v `shouldBe` maybe (Left $ Valid v) Right (pr v)
+
+  describe "testV" $ do
+    prop "shoud fail or succeed depending on the predicate" $ \(v::String) (e::String) (p::Bool) ->
+      let
+        o = bool (Left $ Valid v) (Right [e]) p
+        t = testV passV (failV [e])
+      in
+        validateP (t $ pure . const p) v `shouldBe` o
+
+  describe "caseV" $ do
+    prop "should test one or the other validator based on the status of the first" $ \(v::String) (b1::Bool) (b2::Bool) ->
+      let
+        t1 = bool (failV ["error 1"]) passV b1
+        t2 = bool (failV ["error 2"]) passV b2
+        t3 = bool (failV ["error 3"]) passV b2
+      in
+        validateP (caseV t2 t3 t1) v `shouldBe` case (b1, b2) of
+          (_, True) -> Left $ Valid v
+          (True, False) -> Right $ ["error 3"]
+          (False, False) -> Right $ ["error 2"]
+
+  describe "scanV" $ do
+    prop "should test one or the other validator based on the status of the first, and accumulate the error in case both first and second one fail" $ \(v::String) (b1::Bool) (b2::Bool) ->
+      let
+        t1 = bool (failV ["error 1"]) passV b1
+        t2 = bool (failV ["error 2"]) passV b2
+        t3 = bool (failV ["error 3"]) passV b2
+      in
+        validateP (scanV t2 t3 t1) v `shouldBe` case (b1, b2) of
+          (_, True) -> Left $ Valid v
+          (True, False) -> Right $ ["error 3"]
+          (False, False) -> Right $ ["error 1", "error 2"]
 
 {- CORE TESTS -}
 
@@ -118,23 +109,20 @@ failTest = undefined
 
 {- COMPLEX TESTS -}
 
--- data User' a = User
---   { email    :: Validatable a String   Text
---   , username :: Validatable a [String] Text
---   }
+data User = User
+  { email    :: String
+  , username :: String
+  } deriving (Eq, Show)
 
--- type User = User' 'Simple
--- deriving instance Eq   User
--- deriving instance Show User
+data UserError = UserError
+  { eemail    :: Maybe [String]
+  , eusername :: Maybe [String]
+  } deriving (Eq, Show)
 
--- type UserError = User' 'Report
--- deriving instance Eq   UserError
--- deriving instance Show UserError
-
--- userValidator :: Monad m => Validator User m UserError
--- userValidator = User
---   <$> check  email nonempty'
---   <*> checks username [nonempty, nonbollocks, nonshort]
+userValidator :: forall m. Monad m => Validator m User UserError
+userValidator = UserError
+  <$> check email (nonempty @m)
+  <*> check username [nonempty @m, nonbollocks, nonshort]
 
 -- badUser :: User
 -- badUser = User "boaty@mcboatface.com" "bollocks"
@@ -212,27 +200,17 @@ failTest = undefined
 
 {- BASIC FIELD TESTS -}
 
--- nonover18 :: Monad m => Int -> ExceptT String m Int
--- nonover18 n = if n < 18
---   then throwE "must be greater than 18"
---   else pure n
+nonover18 :: Applicative m => Validator m Int [String]
+nonover18 = makeV $ pure . \n -> bool
+  (Just ["must be greater than 18"])
+  Nothing
+  (n < 18)
 
--- nonempty' :: Monad m => Text -> ExceptT String m Text
--- nonempty' t = if Text.null t
---   then throwE "can't be empty"
---   else pure t
+nonempty :: Monad m => Validator m String [String]
+nonempty = testV passV (failV ["can't be empty"]) $ pure . null
 
--- nonempty :: Monad m => Text -> ExceptT [String] m Text
--- nonempty t = if Text.null t
---   then throwE ["can't be empty"]
---   else pure t
+nonbollocks :: Monad m => Validator m String [String]
+nonbollocks = testV passV (failV ["can't be bollocks"]) $ pure . (=="bollocks")
 
--- nonbollocks :: Monad m => Text -> ExceptT [String] m Text
--- nonbollocks t = if t == "bollocks"
---   then throwE ["can't be bollocks"]
---   else pure t
-
--- nonshort :: Monad m => Text -> ExceptT [String] m Text
--- nonshort t = if Text.length t < 10
---   then throwE ["too short"]
---   else pure t
+nonshort :: Monad m => Validator m String [String]
+nonshort = testV passV (failV ["too short"]) $ pure . ((<10) . length)

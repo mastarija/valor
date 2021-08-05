@@ -1,4 +1,6 @@
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 --
 module Data.Valor where
@@ -11,7 +13,7 @@ import Data.Valor.Internal
 
 newtype Valid v = Valid
   { unValid :: v
-  }
+  } deriving (Eq, Show)
 
 --
 
@@ -68,29 +70,33 @@ caseV (Validator b) (Validator d) (Validator p) = Validator $ \v -> do
 scanV :: (Monad m, Monoid e) => Validator m v e -> Validator m v e -> Validator m v e -> Validator m v e
 scanV (Validator b) (Validator d) (Validator p) = Validator $ \v -> do
   vp <- p v
-  (<>) <$> (pure vp) <*> case vp of
-    Inert _ -> d v
-    Wrong _ -> b v
+  case vp of
+    Inert _  -> d v
+    Wrong e1 -> do
+      vb <- b v
+      case vb of
+        Inert _ -> pure vb
+        Wrong e2 -> pure $ Wrong $ e1 <> e2
 
 --
 
 class Check f v o where
   check :: f -> v -> o
 
-instance Functor m =>
+instance forall m v x e. Functor m =>
   Check (v -> x) (Validator m x e) (Validator m v (Maybe e)) where
   check sel val = Validator $ \v -> runValidator (go val) (sel v)
     where
-    go :: Functor m => Validator m v e -> Validator m v (Maybe e)
+    go :: Functor m => Validator m x e -> Validator m x (Maybe e)
     go (Validator vl) = Validator $ \v -> flip fmap (vl v) $ \we -> case we of
       Inert _ -> Inert $ Nothing
       Wrong e -> Wrong $ Just e
 
-instance (Applicative m, Monoid e) =>
+instance forall m v x e. (Applicative m, Monoid e) =>
   Check (v -> x) [Validator m x e] (Validator m v (Maybe e)) where
   check sel = check sel . mconcat
 
-instance (Applicative m, Traversable t) =>
+instance forall m v x t e. (Applicative m, Traversable t) =>
   Check (v -> t x) (Validator m x e) (Validator m v (Maybe (t (Maybe e)))) where
   check sel (Validator val) = Validator $ fmap (go2 . go1) . traverse val . sel
     where
@@ -115,3 +121,29 @@ validateM val v = flip fmap (runValidator val v) $ \w -> case w of
 
 validateP :: Validator Identity v e -> v -> Either (Valid v) e
 validateP val = runIdentity . validateM val
+
+--
+
+data User = User
+  { email    :: String
+  , username :: String
+  } deriving (Eq, Show)
+
+data UserError = UserError
+  { eemail    :: Maybe [String]
+  , eusername :: Maybe [String]
+  } deriving (Eq, Show)
+
+userValidator :: forall m. Monad m => Validator m User UserError
+userValidator = UserError
+  <$> check email nonempty
+  <*> check username [nonempty, nonbollocks, nonshort]
+
+nonempty :: Monad m => Validator m String [String]
+nonempty = testV passV (failV ["can't be empty"]) $ pure . null
+
+nonbollocks :: Monad m => Validator m String [String]
+nonbollocks = testV passV (failV ["can't be bollocks"]) $ pure . (=="bollocks")
+
+nonshort :: Monad m => Validator m String [String]
+nonshort = testV passV (failV ["too short"]) $ pure . ((<10) . length)
