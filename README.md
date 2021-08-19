@@ -1,6 +1,6 @@
 # ⛨ Valor
 
-General, simple and easy to use structured validation library that gives you
+Simple, easy to use and powerful structured validation library that gives you
 control over the error and input types.
 
 New version was reworked, and now it has no dependencies (other than `base`).

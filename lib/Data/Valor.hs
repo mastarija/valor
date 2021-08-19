@@ -1,3 +1,7 @@
+{- |
+  Simple, easy to use and powerful structured validation library that gives you
+  control over the error and input types.
+-}
 module Data.Valor
   ( Valid
   , unValid
@@ -23,7 +27,6 @@ module Data.Valor
 import Prelude hiding ( fail )
 --
 import Data.Bool ( bool )
-import Data.Maybe ( maybe )
 import Data.Functor.Identity ( Identity (..) )
 import Data.Valor.Internal ( ValorI (..) , altI , valI , isInertI )
 --
@@ -227,6 +230,10 @@ toE ( Valor v ) = Valor $ \ i -> do
 
 --
 
+{- |
+  Make a validator work with another input type by providing a conversion
+  function.
+-}
 check :: Monad m => ( i -> x ) -> Valor x m e -> Valor i m e
 check s v = Valor $ \ i -> unValor v ( s i )
 
@@ -254,8 +261,8 @@ checkN :: ( Monad m , Traversable t ) => ( i -> t x ) -> Valor x m e -> Valor i 
 checkN s v = toM $ checkN' s ( toM v )
   where
     checkN' :: ( Monad m , Traversable t ) => ( i -> t x ) -> Valor x m e -> Valor i m ( t e )
-    checkN' s v = Valor $ \ i -> do
-      es <- traverse ( unValor v ) ( s i )
+    checkN' s' v' = Valor $ \ i -> do
+      es <- traverse ( unValor v' ) ( s' i )
       pure $ bool Wrong Inert (all isInertI es) $ fmap valI es
 
 --
