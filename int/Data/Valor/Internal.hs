@@ -1,35 +1,78 @@
 module Data.Valor.Internal where
 --
 
-data Wrong e = Inert e | Wrong e
+{-|
+  The core internal datatype that is carrying and accumulating the errors.
+-}
+data ValorI e
+  = Inert e
+  | Wrong e
 
-instance Semigroup e => Semigroup (Wrong e) where
-  Wrong b <> Wrong d = Wrong $ b <> d
+--
+
+{-|
+  'Inert' values are always ignored (unless there are two, then the second one
+  is returned). This is because they are essentially just a placeholder.
+-}
+instance Semigroup e => Semigroup ( ValorI e ) where
+  Inert _ <> v = v
   Wrong e <> Inert _ = Wrong e
-  Inert _ <> Wrong e = Wrong e
-  Inert e <> Inert _ = Inert e
+  Wrong b <> Wrong d = Wrong $ b <> d
 
-instance Monoid e => Monoid (Wrong e) where
+{-|
+  'ValorI' is a 'Monoid' only if the inner error type is a monoid.
+-}
+instance Monoid e => Monoid ( ValorI e ) where
   mempty = Inert mempty
 
-instance Functor Wrong where
-  fmap f (Wrong e) = Wrong $ f e
-  fmap f (Inert e) = Inert $ f e
+{-|
+  Simple and clean 'Functor' instance applying the function over the inner
+  value.
+-}
+instance Functor ValorI where
+  fmap f ( Inert e ) = Inert $ f e
+  fmap f ( Wrong e ) = Wrong $ f e
 
-instance Applicative Wrong where
+{-|
+  The 'pure' is defined as 'Inert'. This is because we don't want to introduce
+  an error immediately if we just want to apply e.g. a constructor over the
+  'Applicative' values.
+-}
+instance Applicative ValorI where
   pure = Inert
 
-  Wrong f <*> Wrong e = Wrong $ f e
-  Wrong f <*> Inert e = Wrong $ f e
-  Inert f <*> Wrong e = Wrong $ f e
   Inert f <*> Inert e = Inert $ f e
+  Inert f <*> Wrong e = Wrong $ f e
+  Wrong f <*> Inert e = Wrong $ f e
+  Wrong f <*> Wrong e = Wrong $ f e
 
-altOW :: Wrong e -> Wrong e -> Wrong e
-altOW (Inert e) _         = Inert e
-altOW _         (Inert e) = Inert e
-altOW (Wrong _) (Wrong e) = Wrong e
+--
 
-altMW :: Semigroup e => Wrong e -> Wrong e -> Wrong e
-altMW (Inert e) _         = Inert e
-altMW _         (Inert e) = Inert e
-altMW (Wrong b) (Wrong d) = Wrong $ b <> d
+{-|
+  Implementation of the 'Alternative' operator without the 'empty'. If we could
+  limit the internal type of the 'Alternative' type class, there would be a
+  viable 'empty' and thus an 'Alternative' instance. Buuut... since we can't,
+  this is the best we can do without introducing more complexity.
+-}
+altI :: Semigroup e => ValorI e -> ValorI e -> ValorI e
+altI ( Inert e ) _ = Inert e
+altI _ ( Inert e ) = Inert e
+altI ( Wrong b ) ( Wrong d ) = Wrong $ b <> d
+
+--
+
+{-|
+  Gives back the inner error value, regardless if it's 'Inert' or 'Wrong'.
+-}
+valI :: ValorI e -> e
+valI ( Inert e ) = e
+valI ( Wrong e ) = e
+
+{-|
+  Checks if the 'ValorI' value is 'Inert'.
+-}
+isInertI :: ValorI e -> Bool
+isInertI ( Inert _ ) = True
+isInertI ( Wrong _ ) = False
+
+--
