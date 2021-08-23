@@ -2,41 +2,11 @@ module Data.Valor.Internal where
 --
 
 {- |
-  'Valor' (__VAL__idat__OR__) is the centerpiece of this validation library. You
-  can think of it as a function from an input to a possible error. Do check the
-  details in the "Data.Valor.Internal"
--}
-newtype Valor i m e = Valor
-  { unValor :: i -> m ( Wrong e )
-  }
-
-instance ( Monad m , Semigroup e ) => Semigroup ( Valor i m e ) where
-  Valor b <> Valor d = Valor $ \ i -> (<>) <$> ( b i ) <*> ( d i )
-
-instance ( Monad m , Monoid e ) => Monoid ( Valor i m e ) where
-  mempty = Valor $ const $ pure mempty
-
-instance Monad m => Functor ( Valor i m ) where
-  fmap f ( Valor v ) = Valor $ \ i -> fmap f <$> v i
-
-instance Monad m => Applicative ( Valor i m ) where
-  pure = Valor . const . pure . pure
-
-  Valor b <*> Valor d = Valor $ \ i -> (<*>) <$> ( b i ) <*> ( d i )
-
-instance Monad m => Monad ( Valor i m ) where
-  Valor v >>= evv' = Valor $ \ i -> do
-    ve <- v i
-    case ve of
-      Inert e -> unValor ( evv' e ) i
-      Wrong e -> unValor ( evv' e ) i >>= pure . Wrong . valW
-
---
-
-{- |
   Simple wrapper holding a 'Valid' value that has successfully passed the
   validation. It's not supposed to be mapped over, parsed, read, coerced etc.
-  (so as to not modify / spoil the 'Valid' value).
+  (so as to not modify / spoil the 'Valid' value). The only way to construct it
+  is by passing an input throug a validator using 'Data.Valor.validateP' or
+  'Data.Valor.validateM'.
 -}
 newtype Valid a = Valid a
   deriving ( Eq , Show )
@@ -46,6 +16,80 @@ newtype Valid a = Valid a
 -}
 unValid :: Valid a -> a
 unValid ( Valid a ) = a
+
+--
+
+{- |
+  'Valor' (__VAL__idat__OR__) is the centerpiece of this validation library. You
+  can think of it as a function from an input to a possible error. Do check the
+  details in the "Data.Valor.Internal" module.
+
+  Because 'Valor' is essentially just an alias for a function of type
+  @i -> m ('Wrong' e)@ we can think of operations on 'Valor' as operations on
+  the resulting 'Wrong' once @i@ has been applied.
+
+  __NOTE:__ You can not directly interact with 'Wrong' as it is only used
+  internally in 'Valor'.
+
+  Here's a useful table detailing the behavior of each operation on 'Wrong'
+  (and consequently 'Valor'):
+
+  +-----------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
+  |                                   | 'Data.Valor.con' / '<>'    | 'Data.Valor.app' / '<*>' | 'Data.Valor.alt'  | 'Data.Valor.acc'           |
+  +-----------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
+  |@'Wrong.Inert' a × 'Wrong.Inert' b@| @'Wrong.Inert' b@          | @'Wrong.Inert' $ a b@    | @'Wrong.Inert' a@ | @'Wrong.Inert' a@          |
+  +-----------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
+  |@'Wrong.Inert' a × 'Wrong.Wrong' b@| @'Wrong.Wrong' b@          | @'Wrong.Wrong' $ a b@    | @'Wrong.Inert' a@ | @'Wrong.Inert' a@          |
+  +-----------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
+  |@'Wrong.Wrong' a × 'Wrong.Inert' b@| @'Wrong.Wrong' a@          | @'Wrong.Wrong' $ a b@    | @'Wrong.Inert' b@ | @'Wrong.Inert' b@          |
+  +-----------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
+  |@'Wrong.Wrong' a × 'Wrong.Wrong' b@| @'Wrong.Wrong' $ a '<>' b@ | @'Wrong.Wrong' $ a b@    | @'Wrong.Wrong' b@ | @'Wrong.Wrong' $ a '<>' b@ |
+  +-----------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
+-}
+newtype Valor i m e = Valor
+  { unValor :: i -> m ( Wrong e )
+  }
+
+{- |
+  Implemented using the 'Wrong' '<>'. Think of it as evaluating the 'Valor' and
+  then mappending the resulting 'Wrong's.
+-}
+instance ( Monad m , Semigroup e ) => Semigroup ( Valor i m e ) where
+  Valor b <> Valor d = Valor $ \ i -> (<>) <$> ( b i ) <*> ( d i )
+
+{- |
+  Implemented using the 'Wrong' 'mempty' wrapped in 'Valor'.
+-}
+instance ( Monad m , Monoid e ) => Monoid ( Valor i m e ) where
+  mempty = Valor $ const $ pure mempty
+
+{- |
+  Evaluates the 'Valor' and 'fmap's the @f@ over the resulting 'Wrong'.
+-}
+instance Monad m => Functor ( Valor i m ) where
+  fmap f ( Valor v ) = Valor $ \ i -> fmap f <$> v i
+
+{- |
+  Evaluates both 'Valor' operands and then does the '<*>' operation on the
+  resulting 'Wrong's.
+-}
+instance Monad m => Applicative ( Valor i m ) where
+  pure = Valor . const . pure . pure
+
+  Valor b <*> Valor d = Valor $ \ i -> (<*>) <$> ( b i ) <*> ( d i )
+
+{- |
+  Evaluates the "input" 'Valor'. If the result is @'Inert' e@ it takes the @e@
+  and binds it to get the next 'Valor', however, if the result is @'Wrong' e@ it
+  will "remember" that and if the next 'Valor' is 'Inert' it'll be converted to
+  'Wrong.Wrong'.
+-}
+instance Monad m => Monad ( Valor i m ) where
+  Valor v >>= evv' = Valor $ \ i -> do
+    ve <- v i
+    case ve of
+      Inert e -> unValor ( evv' e ) i
+      Wrong e -> unValor ( evv' e ) i >>= pure . Wrong . valW
 
 --
 
@@ -161,6 +205,3 @@ isInert ( Wrong _ ) = False
 isWrong :: Wrong e -> Bool
 isWrong ( Inert _ ) = False
 isWrong ( Wrong _ ) = True
-
---
-

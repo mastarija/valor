@@ -1,7 +1,24 @@
+{- |
+  The idea behind Valor was to provide a simple but powerful data validation
+  library that is easy to understand quickly.
+
+  It achieves these goals by providing the 'Applicative' and 'Monad' instances
+  along with very few, well documented, core combinators. This allows you to
+  figure out what's important and to create your own purpose specific
+  combinators as you need them, instead of searching through a plethora of
+  predefined combinators whose naming scheme might not match your intuition.
+
+  In case you want to better understand what's going under the hood, check out
+  the "Data.Valor.Internal" module. While you can't include it directly, it is
+  provided here as a learning aid.
+-}
 module Data.Valor
-  ( Valid
+  ( -- * Core
+    Valid
   , unValid
   , Valor
+
+    -- * Make
   , con
   , alt
   , acc
@@ -11,11 +28,15 @@ module Data.Valor
   , make
   , peek
   , poke
+
+    -- * Modify
   , nerf
   , peer
   , adapt
   , check1
   , checkN
+
+    -- * Validate
   , validateP
   , validateM
   )
@@ -33,6 +54,12 @@ import Data.Functor.Identity ( Identity (..) )
 -}
 con :: ( Monad m , Semigroup e ) => Valor i m e -> Valor i m e -> Valor i m e
 con = (<>)
+
+{- |
+  An alias for '<*>'.
+-}
+app :: ( Monad m ) => Valor i m (a -> b) -> Valor i m a -> Valor i m b
+app = (<*>)
 
 {- |
   As an alternative to the 'Alternative' type class and the '<|>' operator 'alt'
