@@ -25,11 +25,8 @@ unValid ( Valid a ) = a
   details in the "Data.Valor.Internal" module.
 
   Because 'Valor' is essentially just an alias for a function of type
-  @i -> m ('Wrong' e)@ we can think of operations on 'Valor' as operations on
-  the resulting 'Wrong' once @i@ has been applied.
-
-  __NOTE:__ You can not directly interact with 'Wrong' as it is only used
-  internally in 'Valor'.
+  __@i -> m ('Wrong' e)@__ we can think of operations on 'Valor' as operations
+  on the resulting 'Wrong' once @i@ has been applied.
 
   Here's a useful table detailing the behavior of each operation on 'Wrong'
   (and consequently 'Valor'):
@@ -45,6 +42,9 @@ unValid ( Valid a ) = a
   +-----------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
   |@'Wrong.Wrong' a × 'Wrong.Wrong' b@| @'Wrong.Wrong' $ a '<>' b@ | @'Wrong.Wrong' $ a b@    | @'Wrong.Wrong' b@ | @'Wrong.Wrong' $ a '<>' b@ |
   +-----------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
+
+  __NOTE:__ You can not directly interact with 'Wrong' as it is only used
+  internally in 'Valor'.
 -}
 newtype Valor i m e = Valor
   { unValor :: i -> m ( Wrong e )
@@ -155,6 +155,12 @@ instance Monad Wrong where
 -}
 conW :: Semigroup e => Wrong e -> Wrong e -> Wrong e
 conW = (<>)
+
+{- |
+  An alias for the '<*>'.
+-}
+appW :: Wrong ( a -> b ) -> Wrong a -> Wrong b
+appW = (<*>)
 
 {- |
   Non accumulating 'Alternative'. As long as there's one 'Wrong.Inert' value the

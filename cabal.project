@@ -1,3 +1,4 @@
 packages    : valor.cabal
 
-constraints : base >=4.0 && <5
+constraints : base  >=4.0 && <5
+            , hspec >=2.8 && <3

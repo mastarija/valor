@@ -39,3 +39,19 @@ library int
   import            : core
   hs-source-dirs    : int
   exposed-modules   : Data.Valor.Internal
+
+test-suite spec
+  import            : core
+
+  main-is           : Spec.hs
+  hs-source-dirs    : tst
+  other-modules     : Data.ValorSpec
+                    , Data.Valor.InternalSpec
+
+  build-depends     : int
+                    , valor
+                    , hspec
+
+  type              : exitcode-stdio-1.0
+  ghc-options       : -threaded -rtsopts -with-rtsopts=-N
+  build-tool-depend : hspec-discover:hspec-discover == 2.*

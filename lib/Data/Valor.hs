@@ -13,30 +13,45 @@
   provided here as a learning aid.
 -}
 module Data.Valor
-  ( -- * Core
+  ( {- * Core -}
+    {- | Core data types used in the validation process. -}
+
+    {- ** Valid -}
     Valid
   , unValid
+
+    {- ** Valor -}
   , Valor
 
-    -- * Make
+    {- * Make -}
+    {- | Utilities for making validators. -}
+
+    {- ** Operations -}
   , con
+  , app
   , alt
   , acc
+
+    {- ** Primitives -}
   , pass
   , fail
+
+    {- ** Constructors -}
   , test
   , make
   , peek
   , poke
 
-    -- * Modify
+    {- * Modify -}
+    {- | Functions used to modify the behavior of validators. -}
   , nerf
   , peer
   , adapt
   , check1
   , checkN
 
-    -- * Validate
+    {- * Validate -}
+    {- | Functions used to apply your validators to the data. -}
   , validateP
   , validateM
   )
