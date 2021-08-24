@@ -1,10 +1,11 @@
 module Data.ValorSpec where
 --
-import Test.Hspec ( Spec , it , describe )
+import Test.Hspec ( Spec , it , describe , shouldBe )
 --
 
 spec :: Spec
-spec = undefined
+spec = do
+  describe "Something" $
+    it "is a dummy test" $
+      True `shouldBe` True
 
-shit :: IO ()
-shit = undefined

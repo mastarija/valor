@@ -45,12 +45,14 @@ test-suite spec
 
   main-is           : Spec.hs
   hs-source-dirs    : tst
-  other-modules     : Data.ValorSpec
+  other-modules     : Test.Gen
+                    , Data.ValorSpec
                     , Data.Valor.InternalSpec
 
   build-depends     : int
                     , valor
                     , hspec
+                    , QuickCheck
 
   type              : exitcode-stdio-1.0
   ghc-options       : -threaded -rtsopts -with-rtsopts=-N

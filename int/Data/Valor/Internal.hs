@@ -31,17 +31,17 @@ unValid ( Valid a ) = a
   Here's a useful table detailing the behavior of each operation on 'Wrong'
   (and consequently 'Valor'):
 
-  +-----------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
-  |                                   | 'Data.Valor.con' / '<>'    | 'Data.Valor.app' / '<*>' | 'Data.Valor.alt'  | 'Data.Valor.acc'           |
-  +-----------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
-  |@'Wrong.Inert' a × 'Wrong.Inert' b@| @'Wrong.Inert' b@          | @'Wrong.Inert' $ a b@    | @'Wrong.Inert' a@ | @'Wrong.Inert' a@          |
-  +-----------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
-  |@'Wrong.Inert' a × 'Wrong.Wrong' b@| @'Wrong.Wrong' b@          | @'Wrong.Wrong' $ a b@    | @'Wrong.Inert' a@ | @'Wrong.Inert' a@          |
-  +-----------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
-  |@'Wrong.Wrong' a × 'Wrong.Inert' b@| @'Wrong.Wrong' a@          | @'Wrong.Wrong' $ a b@    | @'Wrong.Inert' b@ | @'Wrong.Inert' b@          |
-  +-----------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
-  |@'Wrong.Wrong' a × 'Wrong.Wrong' b@| @'Wrong.Wrong' $ a '<>' b@ | @'Wrong.Wrong' $ a b@    | @'Wrong.Wrong' b@ | @'Wrong.Wrong' $ a '<>' b@ |
-  +-----------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
+  +-------------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
+  |                                     | 'Data.Valor.con' / '<>'    | 'Data.Valor.app' / '<*>' | 'Data.Valor.alt'  | 'Data.Valor.acc'           |
+  +-------------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
+  | @'Wrong.Inert' a × 'Wrong.Inert' b@ | @'Wrong.Inert' $ a '<>' b@ | @'Wrong.Inert' $ a b@    | @'Wrong.Inert' a@ | @'Wrong.Inert' a@          |
+  +-------------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
+  | @'Wrong.Inert' a × 'Wrong.Wrong' b@ | @'Wrong.Wrong' $ a '<>' b@ | @'Wrong.Wrong' $ a b@    | @'Wrong.Inert' a@ | @'Wrong.Inert' a@          |
+  +-------------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
+  | @'Wrong.Wrong' a × 'Wrong.Inert' b@ | @'Wrong.Wrong' $ a '<>' b@ | @'Wrong.Wrong' $ a b@    | @'Wrong.Inert' b@ | @'Wrong.Inert' b@          |
+  +-------------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
+  | @'Wrong.Wrong' a × 'Wrong.Wrong' b@ | @'Wrong.Wrong' $ a '<>' b@ | @'Wrong.Wrong' $ a b@    | @'Wrong.Wrong' b@ | @'Wrong.Wrong' $ a '<>' b@ |
+  +-------------------------------------+----------------------------+--------------------------+-------------------+----------------------------+
 
   __NOTE:__ You can not directly interact with 'Wrong' as it is only used
   internally in 'Valor'.
@@ -98,6 +98,7 @@ instance Monad m => Monad ( Valor i m ) where
   state (if there was an actual error or not).
 -}
 data Wrong e = Inert e | Wrong e
+  deriving ( Eq )
 
 {- |
   'Wrong.Inert' operands are ignored and 'Wrong.Wrong' operands are 'mappend'ed.
@@ -106,8 +107,9 @@ data Wrong e = Inert e | Wrong e
   'Wrong.Wrong'.
 -}
 instance Semigroup e => Semigroup ( Wrong e ) where
-  Inert _ <> x       = x
-  x       <> Inert _ = x
+  Inert b <> Inert d = Inert $ b <> d
+  Inert b <> Wrong d = Wrong $ b <> d
+  Wrong b <> Inert d = Wrong $ b <> d
   Wrong b <> Wrong d = Wrong $ b <> d
 
 {- |
