@@ -139,17 +139,6 @@ instance Applicative Wrong where
   Wrong f <*> Inert e = Wrong $ f e
   Wrong f <*> Wrong e = Wrong $ f e
 
-{- |
-  This monad instance will detect the 'Wrong.Wrong' value and propagate it to
-  the final result. Instance is not very useful since this is an internal
-  library, and exists simply because it can. :P
--}
-instance Monad Wrong where
-  Inert e >>= ewe' = ewe' e
-  Wrong e >>= ewe' = case ewe' e of
-    Inert e' -> Wrong e'
-    Wrong e' -> Wrong e'
-
 --
 
 {- |
@@ -171,9 +160,10 @@ appW = (<*>)
   'Inert's then only the first one is returned.
 -}
 altW :: Wrong e -> Wrong e -> Wrong e
-altW ( Inert e ) _           = Inert e
-altW _           ( Inert e ) = Inert e
-altW ( Wrong _ ) x           = x
+altW ( Inert e ) ( Inert _ ) = Inert e
+altW ( Inert e ) ( Wrong _ ) = Inert e
+altW ( Wrong _ ) ( Inert e ) = Inert e
+altW ( Wrong _ ) ( Wrong e ) = Wrong e
 
 {- |
   Accumulating 'Alternative'. Almost the same as 'altW' except if there are two
