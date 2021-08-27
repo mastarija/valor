@@ -17,6 +17,7 @@ spec :: Spec
 spec = do
   validSpec
   wrongSpec
+  valorSpec
 
 validSpec :: Spec
 validSpec = describe "Valid" $ do
@@ -140,6 +141,8 @@ wrongSpec = describe "Wrong" $ do
       it "Should return 'False' when 'Inert'" $
         isWrong ( Inert @Int 0 ) `shouldBe` False
 
+valorSpec :: Spec
+valorSpec = describe "Valor" $ do
   describe "'Valor' property tests" $ do
     describe "Monad instance for 'Valor'" $ do
       it "Left identity: return a >>= k ≡ k a" $ property $ \ s ->

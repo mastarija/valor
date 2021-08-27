@@ -37,3 +37,9 @@ genFunction2 = elements
   , (*)
   , (-)
   ]
+
+genPredicate :: Gen ( String -> Bool )
+genPredicate = elements [ null , (>=3) . length , (<=5) . length ]
+
+genPredicateInt :: Gen ( Int -> Bool )
+genPredicateInt = elements [ (>3) , (<3) , (<6) , (==0) , (>0) ]

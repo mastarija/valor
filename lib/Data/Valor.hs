@@ -73,7 +73,7 @@ con = (<>)
 {- |
   An alias for '<*>'.
 -}
-app :: ( Monad m ) => Valor i m (a -> b) -> Valor i m a -> Valor i m b
+app :: Monad m => Valor i m (a -> b) -> Valor i m a -> Valor i m b
 app = (<*>)
 
 {- |
@@ -148,7 +148,7 @@ poke ( Valor f ) ( Valor p ) ( Valor t ) = Valor $ \ i -> do
     Wrong b -> do
       tr' <- f i
       pure $ case tr' of
-        Inert _ -> Wrong b
+        Inert e -> Inert e
         Wrong d -> Wrong $ b <> d
 
 --

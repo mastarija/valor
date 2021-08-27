@@ -56,4 +56,4 @@ test-suite spec
 
   type              : exitcode-stdio-1.0
   ghc-options       : -threaded -rtsopts -with-rtsopts=-N
-  build-tool-depend : hspec-discover:hspec-discover == 2.*
+  build-tool-depends: hspec-discover:hspec-discover == 2.*
