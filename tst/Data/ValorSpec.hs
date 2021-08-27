@@ -122,3 +122,238 @@ spec = do
           ( runIdentity $ unValor t ( TestType is ) )
           ==
           ( bool ( Wrong $ Just es ) ( Inert $ Nothing ) ( and cs ) )
+
+--
+
+data State = State
+  { teams     :: [ String ]
+  , countries :: [ String ]
+  } deriving ( Eq , Show )
+
+--
+
+newtype Age = Age
+  { unAge :: Int
+  } deriving ( Eq , Show )
+
+data AgeError = AgeUnder | AgeOver
+  deriving ( Eq , Show )
+
+ageV :: Monad m => Valor Age m [ AgeError ]
+ageV = adapt unAge $ passIf [ AgeUnder ] (>18) <> failIf [ AgeOver ] (>65)
+
+--
+
+newtype Team = Team
+  { unTeam :: String
+  } deriving ( Eq , Show )
+
+data TeamError = TeamEmpty | TeamShort | TeamLong | TeamTaken
+  deriving ( Eq , Show )
+
+teamV :: Valor Team ( (->) State ) [ TeamError ]
+teamV = adapt unTeam $ mconcat
+  [ failIf [ TeamEmpty ] null
+  , passIf [ TeamShort ] ( (>3) . length )
+  , failIf [ TeamLong  ] ( (>50) . length )
+  , make $ \ i -> do
+      ts <- teams
+      pure $ if i `elem` ts
+        then Just [ TeamTaken ]
+        else Nothing
+  ]
+
+exTeamValid :: Team
+exTeamValid = Team "Team Haskell"
+
+exTeamEmpty :: Team
+exTeamEmpty = Team ""
+
+exTeamShort :: Team
+exTeamShort = Team "srt"
+
+exTeamLong :: Team
+exTeamLong = Team "Super Mega Awesome Team Rocket Pocket Locket Wow Still Going"
+
+exTeamTaken :: Team
+exTeamTaken = Team "Taken"
+
+--
+
+newtype Email = Email
+  { unEmail :: String
+  } deriving ( Eq , Show )
+
+data EmailError = EmailEmpty | EmailNoAt | EmailNoDot
+  deriving ( Eq , Show )
+
+emailV :: Monad m => Valor Email m [ EmailError ]
+emailV = adapt unEmail $ mconcat
+  [ failIf [ EmailEmpty ] null
+  , passIf [ EmailNoAt ] ( any (=='@') )
+  , passIf [ EmailNoDot ] ( any (=='.') )
+  ]
+
+exEmailValid :: Email
+exEmailValid = Email "valid@email.com"
+
+exEmailEmpty :: Email
+exEmailEmpty = Email ""
+
+exEmailNoAt :: Email
+exEmailNoAt = Email "invalidemail.com"
+
+exEmailNoDot :: Email
+exEmailNoDot = Email "invalid@emailcom"
+
+--
+
+newtype Country = Country
+  { unCountry :: String
+  } deriving ( Eq , Show )
+
+data CountryError = CountryEmpty | CountryNotAllowed
+  deriving ( Eq , Show )
+
+countryV :: Valor Country ( (->) State ) [ CountryError ]
+countryV = adapt unCountry $ mconcat
+  [ failIf [ CountryEmpty ] null
+  , make $ \ i -> do
+      cs <- countries
+      pure $ if i `elem` cs
+        then Nothing
+        else Just [ CountryNotAllowed ]
+  ]
+
+exCountryValid :: Country
+exCountryValid = Country "Croatia"
+
+exCountryEmpty :: Country
+exCountryEmpty = Country ""
+
+exCountryNotAllowed :: Country
+exCountryNotAllowed = Country "Europe"
+
+--
+
+data Participant = Participant
+  { age     :: Age
+  , name    :: String
+  , surname :: String
+  , email   :: Email
+  } deriving ( Eq , Show )
+
+data ParticipantError = ParticipantError
+  { ageE      :: Maybe [ AgeError ]
+  , nameE     :: Maybe [ String ]
+  , surnameE  :: Maybe [ String ]
+  , emailE    :: Maybe [ EmailError ]
+  } deriving ( Eq , Show )
+
+participantV :: Monad m => Valor Participant m ParticipantError
+participantV = ParticipantError
+  <$> check1 age ageV
+  <*> check1 name ( failIf [ "name can't be empty" ] null )
+  <*> check1 surname ( failIf [ "surname can't be empty"] null )
+  <*> check1 email emailV
+
+exParticipantValid1 :: Participant
+exParticipantValid1 = Participant
+  { age = Age 30
+  , name = "Pero"
+  , surname = "Perić"
+  , email = Email "pero.peric@email.com"
+  }
+
+exParticipantValid2 :: Participant
+exParticipantValid2 = Participant
+  { age = Age 51
+  , name = "Marko"
+  , surname = "Marić"
+  , email = Email "marko.maric@email.com"
+  }
+
+exParticipantValid3 :: Participant
+exParticipantValid3 = Participant
+  { age = Age 29
+  , name = "Jane"
+  , surname = "Doe"
+  , email = Email "jane.doe@email.com"
+  }
+
+exParticipantInvalid1 :: Participant
+exParticipantInvalid1 = Participant
+  { age = Age 48
+  , name = ""
+  , surname = "Perić"
+  , email = Email "peropericemailcom"
+  }
+
+exParticipantInvalid2 :: Participant
+exParticipantInvalid2 = Participant
+  { age = Age 73
+  , name = "John"
+  , surname = "Doe"
+  , email = Email "john.doe@mail.com"
+  }
+
+exParticipantInvalid3 :: Participant
+exParticipantInvalid3 = Participant
+  { age = Age 17
+  , name = "Mini"
+  , surname = "Morris"
+  , email = Email ""
+  }
+
+--
+
+data Application = Application
+  { team    :: Team
+  , country :: Country
+  , captain :: Participant
+  , members :: [ Participant ]
+  } deriving ( Eq , Show )
+
+data ApplicationError = ApplicationError
+  { teamE     :: Maybe [ TeamError ]
+  , countryE  :: Maybe [ CountryError ]
+  , captainE  :: Maybe ParticipantError
+  , membersE  :: Maybe [ Maybe ParticipantError ]
+  } deriving ( Eq , Show )
+
+applicationV :: Valor Application ( (->) State ) ApplicationError
+applicationV = ApplicationError
+  <$> check1 team teamV
+  <*> check1 country countryV
+  <*> check1 captain participantV
+  <*> checkN members participantV
+
+exApplicationValid :: Application
+exApplicationValid = Application
+  { team = Team "Valor"
+  , country = Country "Croatia"
+  , captain = exParticipantValid1
+  , members = [ exParticipantValid2 , exParticipantValid3 ]
+  }
+
+exApplicationInvalid1 :: Application
+exApplicationInvalid1 = Application
+  { team = exTeamTaken
+  , country = exCountryEmpty
+  , captain = exParticipantValid1
+  , members = [ exParticipantInvalid1 , exParticipantValid3 ]
+  }
+
+exApplicationInvalid2 :: Application
+exApplicationInvalid2 = Application
+  { team = exTeamShort
+  , country = exCountryNotAllowed
+  , captain = exParticipantInvalid1
+  , members = [ exParticipantInvalid2 , exParticipantValid1 , exParticipantValid3 , exParticipantValid2 ]
+  }
+
+state :: State
+state = State
+  { teams = [ "Taken" ]
+  , countries = [ "Croatia" , "Germany" , "USA" , "Japan" ]
+  }

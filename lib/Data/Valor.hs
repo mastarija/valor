@@ -34,7 +34,11 @@ module Data.Valor
 
     {- ** Primitives -}
   , pass
+  , passIf
+  , passIfM
   , fail
+  , failIf
+  , failIfM
 
     {- ** Constructors -}
   , test
@@ -62,6 +66,8 @@ import Prelude hiding ( fail )
 import Data.Bool ( bool )
 import Data.Valor.Internal ( Valid (..) , unValid , Valor (..) , Wrong (..) , altW , accW , valW , wrong , isInert )
 import Data.Functor.Identity ( Identity (..) )
+--
+import Data.List.NonEmpty ( NonEmpty (..) )
 --
 
 {- |
@@ -98,20 +104,85 @@ acc ( Valor b ) ( Valor d ) = Valor $ \ i -> accW <$> ( b i ) <*> ( d i )
   'mempty'. If you want to create a validator that always passes for a type that
   isn't a 'Monoid', then you can use 'pure', however you will have to provide it
   a "dummy" error value that you yourself will manage as "neutral".
+
+  ==== __Example__
+
+  @
+  >>> validateP pass 1
+  Left (Valid 1)
+  @
 -}
 pass :: ( Monad m , Monoid e ) => Valor i m e
 pass = mempty
 
 {- |
+  A validator that fails with 'e' if the predicate returns 'False'.
+
+  ==== __Example__
+
+  @
+  >>> validateP ( passIf "must be greater than 0" (>0) ) 1
+  Left (Valid 1)
+  @
+
+  @
+  >>> validateP ( passIf "must be greater than 0" (>0) ) 0
+  Right "must be greater than 0"
+  @
+-}
+passIf :: ( Monad m , Monoid e ) => e -> ( i -> Bool ) -> Valor i m e
+passIf e p = passIfM e ( pure . p )
+
+{- |
+  A monadic version of 'passIf'.
+-}
+passIfM :: ( Monad m , Monoid e ) => e -> ( i -> m Bool ) -> Valor i m e
+passIfM e = test ( fail e ) pass
+
+{- |
   Constructs a validator that always fails with provided error @e@.
+
+  ==== __Example__
+
+  @
+  >>> validateP ( fail "YOU SHALL NOT PASS!!!" ) 1
+  Right "YOU SHALL NOT PASS!!!"
+  @
 -}
 fail :: Monad m => e -> Valor i m e
 fail = Valor . const . pure . Wrong
+
+{- |
+  A validator that fails with 'e' if the predicate returns 'True'.
+
+  ==== __Example__
+
+  @
+  >>> validateP ( failIf "must be less than or equal to 0" (>0) ) 1
+  Right "must be less than or equal to 0"
+  @
+
+  @
+  >>> validateP ( failIf "must be less than or equal to 0" (>0) ) (-20)
+  Left (Valid (-20))
+  @
+-}
+failIf :: ( Monad m , Monoid e ) => e -> ( i -> Bool ) -> Valor i m e
+failIf e p = failIfM e ( pure . p )
+
+{- |
+  A monadic version of 'failIf'.
+-}
+failIfM :: ( Monad m , Monoid e ) => e -> ( i -> m Bool ) -> Valor i m e
+failIfM e p = test pass ( fail e ) p
 
 --
 
 {- |
   Apply one or the other validator depending on the result of a test.
+
+  ==== __Example__
+
 -}
 test
   :: Monad m
@@ -227,3 +298,4 @@ validateP v = runIdentity . validateM v
 -}
 validateM :: Monad m => Valor i m e -> i -> m ( Either ( Valid i ) e )
 validateM ( Valor v ) i = v i >>= pure . wrong Right ( const $ Left $ Valid i )
+
