@@ -183,6 +183,13 @@ failIfM e p = test pass ( fail e ) p
 
   ==== __Example__
 
+  @
+  >>> let exV = test pass (fail "I'm a failure") (pure . (>3))
+  >>> validateP exV 3
+  Left (Valid 3)
+  >>> validateP exV 4
+  Right "I'm a failure"
+  @
 -}
 test
   :: Monad m
@@ -195,6 +202,16 @@ test ( Valor f ) ( Valor p ) t = Valor $ \ i -> t i >>= bool ( f i ) ( p i )
 {- |
   Construct a validator that checks the input @i@ and 'Maybe' results in an
   error @e@.
+
+  ==== __Example__
+
+  @
+  >>> let exV = make $ \ i -> pure $ if i > 3 then Nothing else Just "I'm 3 or less failure"
+  >>> validateP exV 3
+  Right "I'm 3 or less failure"
+  >>> validateP exV 4
+  Left (Valid 4)
+  @
 -}
 make :: ( Monad m , Monoid e ) => ( i -> m ( Maybe e ) ) -> Valor i m e
 make ime = Valor $ \ i -> ime i >>= flip unValor i . maybe pass fail
@@ -203,6 +220,21 @@ make ime = Valor $ \ i -> ime i >>= flip unValor i . maybe pass fail
   Construct a validator that applies another validator depending on the result
   from a test validator. If both the "test" and the "fail" validator fail, then
   only the error from the "fail" validator is returned.
+
+  @
+  >>> let failV = failIf "I'm less than 3" (<3)
+  >>> let passV = failIf "I'm greater than 4" (>4)
+  >>> let testV = failIf "I'm not divisible by 2" odd
+  >>> let exV = peek failV passV testV
+  >>> validateP exV 7
+  Left (Valid 7)
+  >>> validateP exV 6
+  Right "I'm greater than 4"
+  >>> validateP exV 2
+  Left (Valid 2)
+  >>> validateP exV 1
+  Right "I'm less than 3"
+  @
 -}
 peek :: ( Monad m , Semigroup e ) => Valor i m e -> Valor i m e -> Valor i m e -> Valor i m e
 peek ( Valor f ) ( Valor p ) ( Valor t ) = Valor $ \ i -> t i >>= wrong ( const $ f i ) ( const $ p i )
@@ -210,6 +242,20 @@ peek ( Valor f ) ( Valor p ) ( Valor t ) = Valor $ \ i -> t i >>= wrong ( const 
 {- |
   Just like 'peek', except if both the "test" and the "fail" validators fail,
   their results are 'mappend'ed ('<>').
+
+  >>> let failV = failIf ["I'm less than 3"] (<3)
+  >>> let passV = failIf ["I'm greater than 4"] (>4)
+  >>> let testV = failIf ["I'm not divisible by 2"] odd
+  >>> let exV = poke failV passV testV
+  >>> validateP exV 7
+  Left (Valid 7)
+  >>> validateP exV 6
+  Right ["I'm greater than 4"]
+  >>> validateP exV 2
+  Left (Valid 2)
+  >>> validateP exV 1
+  Right ["I'm not divisible by 2","I'm less than 3"]
+  @
 -}
 poke :: ( Monad m , Semigroup e ) => Valor i m e -> Valor i m e -> Valor i m e -> Valor i m e
 poke ( Valor f ) ( Valor p ) ( Valor t ) = Valor $ \ i -> do
@@ -230,10 +276,17 @@ poke ( Valor f ) ( Valor p ) ( Valor t ) = Valor $ \ i -> do
 
   Use of this function is discouraged, however it might come in handy in
   combination with 'peer' within the 'Monad'ic context when you want to check
-  the result of a validation without failing the whole computation.
+  the result of a validation without failing the whole 'Monad'ic computation.
 
   Be careful though, @nerf . peer@ is not the same as @peer . nerf@ (which is
   essentially useless and will always result in 'Nothing').
+
+  ==== __Example__
+
+  @
+  >>> validateP (nerf $ fail "I'm an error that will never appear") 0
+  Left (Valid 0)
+  @
 -}
 nerf :: Monad m => Valor i m e -> Valor i m e
 nerf ( Valor v ) = Valor $ \ i -> v i >>= pure . Inert . valW
@@ -241,6 +294,23 @@ nerf ( Valor v ) = Valor $ \ i -> v i >>= pure . Inert . valW
 {- |
   Allows you to 'peer' into the 'Wrong' contained within the 'Valor' (how
   poetic) and if there is nothing 'Wrong.Wrong' it will return 'Nothing'.
+
+  It might be useful in the 'Monad'ic context to know if the validator has
+  failed (in which case @'Just' e@ is returned) or if it has succeeded.
+
+  ==== __Example__
+
+  @
+  >>> validateP (peer $ fail "I have failed") 0
+  Right (Just "I have failed")
+  >>> validateP (peer pass) 0
+  Left (Valid 0)
+  >>> let exV = peer (failIf "I'm less than 3" (<3)) >>= maybe (fail "I fail if previous validator succeeds") fail
+  >>> validateP exV 3
+  Right "I fail if previous validator succeeds"
+  >>> validateP exV 2
+  Right "I'm less than 3"
+  @
 -}
 peer :: Monad m => Valor i m e -> Valor i m ( Maybe e )
 peer ( Valor v ) = Valor $ \ i -> v i >>= pure . wrong ( Wrong . Just ) ( const $ Inert Nothing )
@@ -249,11 +319,21 @@ peer ( Valor v ) = Valor $ \ i -> v i >>= pure . wrong ( Wrong . Just ) ( const 
 
 {- |
   It can 'adapt' a validator to the new input type given a conversion function,
-  making it useful for working with records (think field selectors).
+  making it useful for working with records (think field selectors) or newtypes.
 
   This is essentially a 'Data.Functor.Contravariant.contramap' from
   "Data.Functor.Contravariant", however, due to the placement of arguments in
   the 'Valor' type constructor it is not possible to write that instance.
+
+  ==== __Example__
+
+  @
+  >>> newtype Age = Age { unAge :: Int } deriving Show
+  >>> validateP (adapt unAge $ failIf "under aged" (<18)) (Age 78)
+  Left (Valid (Age {unAge = 78}))
+  >>> validateP (adapt unAge $ failIf "under aged" (<18)) (Age 14)
+  Right "under aged"
+  @
 -}
 adapt :: Monad m => ( i -> x ) -> Valor x m e -> Valor i m e
 adapt s ( Valor v ) = Valor $ v . s
@@ -262,6 +342,21 @@ adapt s ( Valor v ) = Valor $ v . s
   Useful for constructing structured errors / error records. By using 'Maybe'
   you can specify for which exact field an error has occurred. It is implemented
   using 'peer' and 'adapt'.
+
+  ==== __Example__
+
+  @
+  >>> data ID = ID {unID :: Int} deriving Show
+  >>> data User = User {userID :: ID, userName :: String} deriving Show
+  >>> data UserError = UserError {ueID :: Maybe [String], ueName :: Maybe [String]} deriving Show
+  >>> userValidator = UserError <$> check1 (unID . userID) (passIf ["invalid ID"] (>0)) <*> check1 userName (failIf ["username can't be empty"] null)
+  >>> validateP userValidator $ User (ID (-1)) ""
+  Right (UserError {ueID = Just ["invalid ID"], ueName = Just ["username can't be empty"]})
+  >>> validateP userValidator $ User (ID 0) "username"
+  Right (UserError {ueID = Just ["invalid ID"], ueName = Nothing})
+  >>> validateP userValidator $ User (ID 11) "mastarija"
+  Left (Valid (User {userID = ID {unID = 11}, userName = "mastarija"}))
+  @
 -}
 check1 :: Monad m => ( i -> x ) -> Valor x m e -> Valor i m ( Maybe e )
 check1 s = peer . adapt s
