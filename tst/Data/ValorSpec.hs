@@ -4,7 +4,7 @@ module Data.ValorSpec where
 --
 import Prelude hiding ( fail )
 --
-import Data.Valor ( pass , fail , test , make , peek , poke , nerf , peer , adapt , check1 , checkN , validateP )
+import Data.Valor ( Valor , pass , fail , test , make , peek , poke , nerf , peer , adapt , check1 , checkN , validateP , failIf , passIf )
 import Data.Valor.Internal ( Valid (..) , unValid , Wrong (..) , unValor )
 --
 import Data.Bool ( bool )
@@ -338,16 +338,16 @@ exApplicationValid = Application
 
 exApplicationInvalid1 :: Application
 exApplicationInvalid1 = Application
-  { team = exTeamTaken
-  , country = exCountryEmpty
+  { team = Team "Taken"
+  , country = Country ""
   , captain = exParticipantValid1
   , members = [ exParticipantInvalid1 , exParticipantValid3 ]
   }
 
 exApplicationInvalid2 :: Application
 exApplicationInvalid2 = Application
-  { team = exTeamShort
-  , country = exCountryNotAllowed
+  { team = Team "srt"
+  , country = Country "Murica!"
   , captain = exParticipantInvalid1
   , members = [ exParticipantInvalid2 , exParticipantValid1 , exParticipantValid3 , exParticipantValid2 ]
   }

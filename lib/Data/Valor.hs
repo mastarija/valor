@@ -11,6 +11,8 @@
   In case you want to better understand what's going under the hood, check out
   the "Data.Valor.Internal" module. While you can't include it directly, it is
   provided here as a learning aid.
+
+  Also, do check the __TUTORIAL__ at the bottom.
 -}
 module Data.Valor
   ( {- * Core -}
@@ -58,6 +60,9 @@ module Data.Valor
     {- | Functions used to apply your validators to the data. -}
   , validateP
   , validateM
+
+    {- * Tutorial -}
+    -- $tutorial
   )
   where
 --
@@ -107,10 +112,9 @@ acc ( Valor b ) ( Valor d ) = Valor $ \ i -> accW <$> ( b i ) <*> ( d i )
 
   ==== __Example__
 
-  @
   >>> validateP pass 1
   Left (Valid 1)
-  @
+
 -}
 pass :: ( Monad m , Monoid e ) => Valor i m e
 pass = mempty
@@ -120,15 +124,11 @@ pass = mempty
 
   ==== __Example__
 
-  @
   >>> validateP ( passIf "must be greater than 0" (>0) ) 1
   Left (Valid 1)
-  @
 
-  @
   >>> validateP ( passIf "must be greater than 0" (>0) ) 0
   Right "must be greater than 0"
-  @
 -}
 passIf :: ( Monad m , Monoid e ) => e -> ( i -> Bool ) -> Valor i m e
 passIf e p = passIfM e ( pure . p )
@@ -144,10 +144,9 @@ passIfM e = test ( fail e ) pass
 
   ==== __Example__
 
-  @
   >>> validateP ( fail "YOU SHALL NOT PASS!!!" ) 1
   Right "YOU SHALL NOT PASS!!!"
-  @
+
 -}
 fail :: Monad m => e -> Valor i m e
 fail = Valor . const . pure . Wrong
@@ -157,15 +156,11 @@ fail = Valor . const . pure . Wrong
 
   ==== __Example__
 
-  @
   >>> validateP ( failIf "must be less than or equal to 0" (>0) ) 1
   Right "must be less than or equal to 0"
-  @
 
-  @
   >>> validateP ( failIf "must be less than or equal to 0" (>0) ) (-20)
   Left (Valid (-20))
-  @
 -}
 failIf :: ( Monad m , Monoid e ) => e -> ( i -> Bool ) -> Valor i m e
 failIf e p = failIfM e ( pure . p )
@@ -183,13 +178,13 @@ failIfM e p = test pass ( fail e ) p
 
   ==== __Example__
 
-  @
   >>> let exV = test pass (fail "I'm a failure") (pure . (>3))
+
   >>> validateP exV 3
   Left (Valid 3)
+
   >>> validateP exV 4
   Right "I'm a failure"
-  @
 -}
 test
   :: Monad m
@@ -205,13 +200,13 @@ test ( Valor f ) ( Valor p ) t = Valor $ \ i -> t i >>= bool ( f i ) ( p i )
 
   ==== __Example__
 
-  @
   >>> let exV = make $ \ i -> pure $ if i > 3 then Nothing else Just "I'm 3 or less failure"
+
   >>> validateP exV 3
   Right "I'm 3 or less failure"
+
   >>> validateP exV 4
   Left (Valid 4)
-  @
 -}
 make :: ( Monad m , Monoid e ) => ( i -> m ( Maybe e ) ) -> Valor i m e
 make ime = Valor $ \ i -> ime i >>= flip unValor i . maybe pass fail
@@ -221,20 +216,24 @@ make ime = Valor $ \ i -> ime i >>= flip unValor i . maybe pass fail
   from a test validator. If both the "test" and the "fail" validator fail, then
   only the error from the "fail" validator is returned.
 
-  @
+  ==== __Example__
+
   >>> let failV = failIf "I'm less than 3" (<3)
   >>> let passV = failIf "I'm greater than 4" (>4)
   >>> let testV = failIf "I'm not divisible by 2" odd
   >>> let exV = peek failV passV testV
+
   >>> validateP exV 7
   Left (Valid 7)
+
   >>> validateP exV 6
   Right "I'm greater than 4"
+
   >>> validateP exV 2
   Left (Valid 2)
+
   >>> validateP exV 1
   Right "I'm less than 3"
-  @
 -}
 peek :: ( Monad m , Semigroup e ) => Valor i m e -> Valor i m e -> Valor i m e -> Valor i m e
 peek ( Valor f ) ( Valor p ) ( Valor t ) = Valor $ \ i -> t i >>= wrong ( const $ f i ) ( const $ p i )
@@ -243,19 +242,24 @@ peek ( Valor f ) ( Valor p ) ( Valor t ) = Valor $ \ i -> t i >>= wrong ( const 
   Just like 'peek', except if both the "test" and the "fail" validators fail,
   their results are 'mappend'ed ('<>').
 
+  ==== __Example__
+
   >>> let failV = failIf ["I'm less than 3"] (<3)
   >>> let passV = failIf ["I'm greater than 4"] (>4)
   >>> let testV = failIf ["I'm not divisible by 2"] odd
   >>> let exV = poke failV passV testV
+
   >>> validateP exV 7
   Left (Valid 7)
+
   >>> validateP exV 6
   Right ["I'm greater than 4"]
+
   >>> validateP exV 2
   Left (Valid 2)
+
   >>> validateP exV 1
   Right ["I'm not divisible by 2","I'm less than 3"]
-  @
 -}
 poke :: ( Monad m , Semigroup e ) => Valor i m e -> Valor i m e -> Valor i m e -> Valor i m e
 poke ( Valor f ) ( Valor p ) ( Valor t ) = Valor $ \ i -> do
@@ -283,10 +287,8 @@ poke ( Valor f ) ( Valor p ) ( Valor t ) = Valor $ \ i -> do
 
   ==== __Example__
 
-  @
   >>> validateP (nerf $ fail "I'm an error that will never appear") 0
   Left (Valid 0)
-  @
 -}
 nerf :: Monad m => Valor i m e -> Valor i m e
 nerf ( Valor v ) = Valor $ \ i -> v i >>= pure . Inert . valW
@@ -300,17 +302,19 @@ nerf ( Valor v ) = Valor $ \ i -> v i >>= pure . Inert . valW
 
   ==== __Example__
 
-  @
   >>> validateP (peer $ fail "I have failed") 0
   Right (Just "I have failed")
+
   >>> validateP (peer pass) 0
   Left (Valid 0)
+
   >>> let exV = peer (failIf "I'm less than 3" (<3)) >>= maybe (fail "I fail if previous validator succeeds") fail
+
   >>> validateP exV 3
   Right "I fail if previous validator succeeds"
+
   >>> validateP exV 2
   Right "I'm less than 3"
-  @
 -}
 peer :: Monad m => Valor i m e -> Valor i m ( Maybe e )
 peer ( Valor v ) = Valor $ \ i -> v i >>= pure . wrong ( Wrong . Just ) ( const $ Inert Nothing )
@@ -327,13 +331,13 @@ peer ( Valor v ) = Valor $ \ i -> v i >>= pure . wrong ( Wrong . Just ) ( const 
 
   ==== __Example__
 
-  @
   >>> newtype Age = Age { unAge :: Int } deriving Show
+
   >>> validateP (adapt unAge $ failIf "under aged" (<18)) (Age 78)
   Left (Valid (Age {unAge = 78}))
+
   >>> validateP (adapt unAge $ failIf "under aged" (<18)) (Age 14)
   Right "under aged"
-  @
 -}
 adapt :: Monad m => ( i -> x ) -> Valor x m e -> Valor i m e
 adapt s ( Valor v ) = Valor $ v . s
@@ -345,18 +349,20 @@ adapt s ( Valor v ) = Valor $ v . s
 
   ==== __Example__
 
-  @
   >>> data ID = ID {unID :: Int} deriving Show
   >>> data User = User {userID :: ID, userName :: String} deriving Show
   >>> data UserError = UserError {ueID :: Maybe [String], ueName :: Maybe [String]} deriving Show
+
   >>> userValidator = UserError <$> check1 (unID . userID) (passIf ["invalid ID"] (>0)) <*> check1 userName (failIf ["username can't be empty"] null)
+
   >>> validateP userValidator $ User (ID (-1)) ""
   Right (UserError {ueID = Just ["invalid ID"], ueName = Just ["username can't be empty"]})
+
   >>> validateP userValidator $ User (ID 0) "username"
   Right (UserError {ueID = Just ["invalid ID"], ueName = Nothing})
+
   >>> validateP userValidator $ User (ID 11) "mastarija"
   Left (Valid (User {userID = ID {unID = 11}, userName = "mastarija"}))
-  @
 -}
 check1 :: Monad m => ( i -> x ) -> Valor x m e -> Valor i m ( Maybe e )
 check1 s = peer . adapt s
@@ -369,6 +375,23 @@ check1 s = peer . adapt s
   This allows us to know in which exact element of a list an error has occurred
   (if you trust your 'Traversable' to maintain the original order after the
   traversal).
+
+  ==== __Example__
+
+  >>> data ID = ID {unID :: Int} deriving Show
+  >>> data User = User {userID :: ID, userName :: String} deriving Show
+  >>> data UserError = UserError {ueID :: Maybe [String], ueName :: Maybe [String]} deriving Show
+
+  >>> userValidator = UserError <$> check1 (unID . userID) (passIf ["invalid ID"] (>0)) <*> check1 userName (failIf ["username can't be empty"] null)
+
+  >>> validUser01 = User (ID 11) "mastarija"
+  >>> validUser02 = User (ID 13) "reygoch"
+
+  >>> invalidUser01 = User (ID 0) ""
+  >>> invalidUser02 = User (ID (-1)) "badboy"
+
+  >>> validateP (checkN id userValidator) [validUser01, invalidUser01, validUser02, invalidUser02]
+  Right (Just [Nothing,Just (UserError {ueID = Just ["invalid ID"], ueName = Just ["username can't be empty"]}),Nothing,Just (UserError {ueID = Just ["invalid ID"], ueName = Nothing})])
 -}
 checkN :: ( Monad m , Traversable t ) => ( i -> t x ) -> Valor x m e -> Valor i m ( Maybe ( t ( Maybe e ) ) )
 checkN s v = Valor $ \ i -> do
@@ -390,6 +413,17 @@ validateP v = runIdentity . validateM v
   Runs a validator within the user provided 'Monad' @m@ allowing you to perform
   side effects during the validation, e.g. check with the application database
   if the username is already registered.
+
+  ==== __Example__
+
+  >>> newtype Database = Database { someData :: Int }
+  >>> let check = \ i -> someData >>= \ d -> pure $ if d < i then Nothing else Just "'DB' data is greater than input"
+
+  >>> validateM (make check) 5 (Database 14)
+  Right "'DB' data is greater than input"
+
+  >>> validateM (make check) 5 (Database 3)
+  Left (Valid 5)
 -}
 validateM :: Monad m => Valor i m e -> i -> m ( Either ( Valid i ) e )
 validateM ( Valor v ) i = v i >>= pure . wrong Right ( const $ Left $ Valid i )
