@@ -1,0 +1,6 @@
+packages    : valor.cabal
+
+constraints : base       >= 4.0   && <5
+            , hspec      >= 2.8   && <3
+            , doctest    >= 0.16  && <0.19
+            , QuickCheck >= 2.14  && <2.15

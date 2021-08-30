@@ -1,0 +1,61 @@
+name: Test & Publish
+
+on:
+  push:
+    tags:
+      - 'release-v[0-9]+.[0-9]+.[0-9]+.[0-9]+'
+    branches:
+      - work
+      - main
+
+jobs:
+  build:
+    env:
+      CONFIG: "--enable-tests --test-show-details=direct"
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - id: haskell
+        name: Haskell Setup
+        uses: haskell/actions/setup@v1
+        with:
+          ghc-version: "9.0.1"
+          cabal-version: "3.4"
+
+      - name: Valor Checkout
+        uses: actions/checkout@v2
+
+      - name: Cabal Update
+        run: cabal v2-update $CONFIG
+
+      - name: Cabal Freeze
+        run: cabal v2-freeze $CONFIG
+
+      - name: Caching
+        uses: actions/cache@v2
+        with:
+          path: |
+            ${{ steps.haskell.outputs.cabal-store }}
+            dist-newstyle
+          key: ${{ runner.os }}-9.0.1-${{ hashFiles( 'cabal.project.freeze' ) }}
+          restore-keys: ${{ runner.os }}-9.0.1-
+
+      - name: Building
+        run: cabal v2-build all $CONFIG
+
+      - name: Testing
+        run: cabal v2-test all $CONFIG
+
+      - name: Documenting
+        run: cabal v2-haddock $CONFIG
+
+      - name: Publishing to Hackage
+        if: startsWith( github.ref , 'refs/tags/release-v' )
+        env:
+          HACKAGE_USERNAME: ${{ secrets.HACKAGE_USERNAME }}
+          HACKAGE_PASSWORD: ${{ secrets.HACKAGE_PASSWORD }}
+        run: |
+          cabal v2-sdist ./pack/
+          files=(pack/*)
+          cabal upload -u "$HACKAGE_USERNAME" -p "$HACKAGE_PASSWORD" $files
