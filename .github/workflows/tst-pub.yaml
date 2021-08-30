@@ -3,7 +3,9 @@ name: Test & Publish
 on:
   push:
     branches:
-      - workflow
+      - new
+      - work
+      - main
 
 jobs:
   build:
