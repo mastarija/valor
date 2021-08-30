@@ -42,10 +42,10 @@ jobs:
           restore-keys: ${{ runner.os }}-${{ matrix.ghc }}
 
       - name: Building
-        run: cabal v2-build
+        run: cabal v2-build all
 
       - name: Testing
-        run: cabal v2-test --test-show-details=direct
+        run: cabal v2-test all --test-show-details=direct
 
       - name: Documenting
         run: cabal v2-haddock
