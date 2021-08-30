@@ -4,7 +4,7 @@ module Data.ValorSpec where
 --
 import Prelude hiding ( fail )
 --
-import Data.Valor ( Valor , pass , fail , test , make , peek , poke , nerf , peer , adapt , check1 , checkN , validateP , failIf , passIf )
+import Data.Valor ( pass , fail , test , make , peek , poke , nerf , peer , adapt , check1 , checkN , validateP )
 import Data.Valor.Internal ( Valid (..) , unValid , Wrong (..) , unValor )
 --
 import Data.Bool ( bool )

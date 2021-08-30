@@ -68,8 +68,6 @@ import Data.Bool ( bool )
 import Data.Valor.Internal ( Valid (..) , unValid , Valor (..) , Wrong (..) , altW , accW , valW , wrong , isInert )
 import Data.Functor.Identity ( Identity (..) )
 --
-import Data.List.NonEmpty ( NonEmpty (..) )
---
 
 {- |
   An alias for 'mappend' (<>).

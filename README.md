@@ -1,5 +1,7 @@
 # ⛨ Valor
 
+[![Test & Publish](https://github.com/mastarija/valor/actions/workflows/tst-pub.yaml/badge.svg)](https://github.com/mastarija/valor/actions/workflows/tst-pub.yaml)
+
 Simple and powerful data validation library with Applicative and Monad
 interface. Great for constructing structured errors.
 
