@@ -33,7 +33,6 @@ library
   import            : core
   hs-source-dirs    : lib
   exposed-modules   : Data.Valor
-                    , Data.Valor.Tutorial
   build-depends     : int
 
 library int

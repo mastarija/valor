@@ -1,3 +1,6 @@
+{- |
+  Guts of valor.
+-}
 module Data.Valor.Internal where
 --
 
@@ -21,8 +24,7 @@ unValid ( Valid a ) = a
 
 {- |
   'Valor' (__VAL__idat__OR__) is the centerpiece of this validation library. You
-  can think of it as a function from an input to a possible error. Do check the
-  details in the "Data.Valor.Internal" module.
+  can think of it as a function from an input to a possible error.
 
   Because 'Valor' is essentially just an alias for a function of type
   __@i -> m ('Wrong' e)@__ we can think of operations on 'Valor' as operations
@@ -82,7 +84,8 @@ instance Monad m => Applicative ( Valor i m ) where
   Evaluates the "input" 'Valor'. If the result is @'Inert' e@ it takes the @e@
   and binds it to get the next 'Valor', however, if the result is @'Wrong' e@ it
   will "remember" that and if the next 'Valor' is 'Inert' it'll be converted to
-  'Wrong.Wrong'.
+  'Wrong.Wrong'. This will essentially make the whole 'Monad'ic computation
+  result in 'Wrong.Wrong'.
 -}
 instance Monad m => Monad ( Valor i m ) where
   Valor v >>= evv' = Valor $ \ i -> do
