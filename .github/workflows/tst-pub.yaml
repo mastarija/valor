@@ -13,21 +13,15 @@ jobs:
     env:
       CONFIG: "--enable-tests --test-show-details=direct"
 
-    strategy:
-      matrix:
-        os: ["ubuntu-latest"]
-        ghc: ["8.10.6", "8.10.7", "9.0.1"]
-        cabal: ["3.4"]
-
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
 
     steps:
       - id: haskell
         name: Haskell Setup
         uses: haskell/actions/setup@v1
         with:
-          ghc-version: ${{ matrix.ghc }}
-          cabal-version: ${{ matrix.cabal }}
+          ghc-version: "9.0.1"
+          cabal-version: "3.4"
 
       - name: Valor Checkout
         uses: actions/checkout@v2
