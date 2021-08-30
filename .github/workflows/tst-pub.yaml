@@ -10,6 +10,9 @@ on:
 
 jobs:
   build:
+    env:
+      CONFIG: "--enable-tests --test-show-details=direct"
+
     strategy:
       matrix:
         os: ["ubuntu-latest"]
@@ -30,10 +33,10 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Cabal Update
-        run: cabal v2-update
+        run: cabal v2-update $CONFIG
 
       - name: Cabal Freeze
-        run: cabal v2-freeze
+        run: cabal v2-freeze $CONFIG
 
       - name: Caching
         uses: actions/cache@v2
@@ -45,13 +48,13 @@ jobs:
           restore-keys: ${{ runner.os }}-${{ matrix.ghc }}
 
       - name: Building
-        run: cabal v2-build all
+        run: cabal v2-build all $CONFIG
 
       - name: Testing
-        run: cabal v2-test all --test-show-details=direct
+        run: cabal v2-test all $CONFIG
 
       - name: Documenting
-        run: cabal v2-haddock
+        run: cabal v2-haddock $CONFIG
 
       - name: Publishing to Hackage
         if: startsWith( github.ref , 'refs/tags/release-v' )
