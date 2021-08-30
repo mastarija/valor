@@ -38,8 +38,8 @@ jobs:
           path: |
             ${{ steps.haskell.outputs.cabal-store }}
             dist-newstyle
-          key: ${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles( 'cabal.project.freeze' ) }}
-          restore-keys: ${{ runner.os }}-${{ matrix.ghc }}
+          key: ${{ runner.os }}-9.0.1-${{ hashFiles( 'cabal.project.freeze' ) }}
+          restore-keys: ${{ runner.os }}-9.0.1-
 
       - name: Building
         run: cabal v2-build all $CONFIG
