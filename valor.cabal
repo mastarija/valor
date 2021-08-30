@@ -1,12 +1,14 @@
 cabal-version       : 3.0
 
 name                : valor
-version             : 0.2.0.0
+version             : 1.0.0.0
 build-type          : Simple
 
 category            : Validation
-synopsis            : Simple, general and structured validation library.
-description         : Please see the README.
+synopsis            : Simple and powerful data validation
+description         : Simple and powerful data validation library with
+                      Applicative and Monad interface. Great for constructing
+                      structured errors.
 
 homepage            : https://github.com/mastarija/valor#readme
 bug-reports         : https://github.com/mastarija/valor/issues

@@ -1,8 +1,8 @@
 # ⛨ Valor
 
-Simple, easy to use and powerful structured validation library that gives you
-control over the error and input types.
+Simple and powerful data validation library with Applicative and Monad
+interface. Great for constructing structured errors.
 
-New version was reworked, and now it has no dependencies (other than `base`).
-Other than a new `Monad` instance, the documentation is a lot more sparse now.
-Sometimes, too much "blah blah" only obscures the relevant info.
+The new version has changed considerably and now it has much simpler API and a
+lot more of useful, to the point examples throughout the documentation. You can
+consider it "mature" at this point.
