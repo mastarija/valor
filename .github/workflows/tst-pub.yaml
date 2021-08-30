@@ -55,5 +55,5 @@ jobs:
         run: cabal v2-haddock
 
       - name: Publishing to Hackage
-        if: startsWith( github.ref , '/refs/tags/release-' )
+        if: startsWith( github.ref , 'refs/tags/release-v' )
         run: echo "Published!"
