@@ -6,6 +6,7 @@ on:
       - new
       - work
       - main
+      - workflows
   pull_request:
     types:
       - opened
@@ -22,7 +23,9 @@ jobs:
     # env:
     #   CONFIG: "--enable-tests --enable-benchmarks"
 
-    # steps:
+    steps:
+    - run: echo "hello world"
+   
     #   - uses: actions/checkout@v2
     #   - uses: haskell/actions/setup@v1
     #     id: setup-haskell-cabal
