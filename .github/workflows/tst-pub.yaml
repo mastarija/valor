@@ -56,6 +56,6 @@ jobs:
           HACKAGE_USERNAME: ${{ secrets.HACKAGE_USERNAME }}
           HACKAGE_PASSWORD: ${{ secrets.HACKAGE_PASSWORD }}
         run: |
-          cabal v2-sdist ./pack/
+          cabal v2-sdist -o ./pack/
           files=(pack/*)
           cabal upload -u "$HACKAGE_USERNAME" -p "$HACKAGE_PASSWORD" $files
