@@ -18,11 +18,10 @@ jobs:
     #   CONFIG: "--enable-tests --enable-benchmarks"
 
     steps:
-    - run: echo "hello world"
-    - run: pwd
-    - run: ls -la
+      - uses: actions/checkout@v2
+      - run: pwd
+      - run: ls -la
 
-    #   - uses: actions/checkout@v2
     #   - uses: haskell/actions/setup@v1
     #     id: setup-haskell-cabal
     #     with:
