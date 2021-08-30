@@ -56,4 +56,10 @@ jobs:
 
       - name: Publishing to Hackage
         if: startsWith( github.ref , 'refs/tags/release-v' )
-        run: echo "Published!"
+        env:
+          HACKAGE_USERNAME: ${{ secrets.HACKAGE_USERNAME }}
+          HACKAGE_PASSWORD: ${{ secrets.HACKAGE_PASSWORD }}
+        run: |
+          cabal v2-sdist ./pack/
+          files=(pack/*)
+          cabal upload -u "$HACKAGE_USERNAME" -p "$HACKAGE_PASSWORD" $files
