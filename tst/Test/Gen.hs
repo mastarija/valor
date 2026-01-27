@@ -1,15 +1,8 @@
 module Test.Gen where
---
-import Data.Valor.Internal ( Wrong (..) )
-import Test.QuickCheck.Gen ( Gen , oneof , elements , vectorOf , chooseInt )
-import Test.QuickCheck.Arbitrary ( arbitrary )
---
 
-genWrong :: Gen a -> Gen ( Wrong a )
-genWrong gen = oneof
-  [ Inert <$> gen
-  , Wrong <$> gen
-  ]
+import Test.QuickCheck.Gen ( Gen , elements , vectorOf , chooseInt )
+import Test.QuickCheck.Arbitrary ( arbitrary )
+
 
 genSmallInt :: Gen Int
 genSmallInt = chooseInt ( 0 , 6 )

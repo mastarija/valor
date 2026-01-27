@@ -1,17 +1,21 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
---
+
 module Data.Valor.InternalSpec where
---
+
 import Prelude hiding ( fail )
---
-import Test.Gen ( genWrong , genSmallInt , genSmallList , genSmallString , genFunction1 )
+
+import Data.Functor ( (<&>) )
+import Data.Functor.Identity ( Identity (..) )
 import Test.Hspec ( Spec , it , describe , shouldBe )
 import Test.QuickCheck ( Gen , property )
-import Data.Valor ( fail , validateP )
-import Data.Valor.Internal ( Valid (..) , unValid , Wrong (..) , altW , accW , valW , wrong , isInert , isWrong )
---
+
+import Data.Valor.Internal ( Valor (..) , Valid (..) , Wrong (..) , unValid , altW , accW , valW , wrong , isInert , isWrong )
+
+import Test.Gen ( genSmallInt , genSmallList , genSmallString , genFunction1 )
+import Test.Gen.Wrong ( genWrong )
+
 
 spec :: Spec
 spec = do
@@ -283,3 +287,13 @@ wrongApplicativeResult gf gv c1 c2 c3 = do
   f <- gf
   v <- gv
   pure $ ( c1 f <*> c2 v ) == ( c3 $ f v )
+
+
+fail :: Monad m => e -> Valor i m e
+fail = Valor . const . pure . Wrong
+
+validateP :: Valor i Identity e -> i -> Either ( Valid i ) e
+validateP v = runIdentity . validateM v
+
+validateM :: Monad m => Valor i m e -> i -> m ( Either ( Valid i ) e )
+validateM ( Valor v ) i = v i <&> wrong Right ( const $ Left $ Valid i )

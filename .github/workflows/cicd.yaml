@@ -1,0 +1,120 @@
+name: Continuous Integration
+
+on:
+  push:
+    tags:
+      - 'release-v[0-9]+.[0-9]+.[0-9]+.[0-9]+'
+    branches:
+      - work
+
+  pull_request:
+
+jobs:
+  test:
+    name: Test [ ${{ matrix.sys }} | GHC ${{ matrix.ghc }} ]
+    runs-on: ${{ matrix.sys }}
+    strategy:
+      matrix:
+        sys: [ ubuntu-latest ]
+        cbl: [ 3.16.0.0 ]
+        ghc: [ 9.14.1 ]
+    outputs:
+      package_version: ${{ steps.package_info.outputs.version }}
+          
+    steps:
+      - name: Project Checkout
+        uses: actions/checkout@v6
+
+      - id: haskell
+        name: Haskell Setup
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: ${{ matrix.cbl }}
+
+      - name: Cabal Config
+        run: |
+          cabal configure --enable-tests --enable-benchmarks --enable-documentation --test-show-details=direct --write-ghc-environment-files=always
+
+      - name: Cabal Freeze
+        run: |
+          cabal freeze
+          echo "${{ steps.haskell.outputs.cabal-store }}"
+
+      - name: Cabal Cache
+        uses: actions/cache@v5
+        with:
+          key: ${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('cabal.project.freeze') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.ghc }}-
+          path: |
+            dist-newstyle
+            ${{ steps.haskell.outputs.cabal-store }}
+
+      - name: Build Dependencies
+        run: |
+          cabal build all --only-dependencies
+
+      - name: Build Project
+        run: |
+          cabal build all
+
+      - name: Test Project
+        run: |
+          cabal test all
+
+      - name: Document Project
+        run: |
+          cabal haddock
+
+      - name: Generate Package Info Output
+        id: package_info
+        run: |
+          CURRENT_VERSION=$( cabal info . | head -n 1 | awk '{print $2}' | sed 's/.*-//' )
+          echo "version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+
+  push:
+    if: startsWith( github.ref , 'refs/tags/release-v' )
+    name: Upload Candidate to Hackage
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Project Checkout
+        uses: actions/checkout@v6
+
+      - id: haskell
+        name: Haskell Setup
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: 9.14.1
+          cabal-version: 3.16.0.0
+
+      - name: Cabal Config
+        run: |
+          cabal configure --enable-tests --enable-benchmarks --enable-documentation --test-show-details=direct --write-ghc-environment-files=always
+
+      - name: Cabal Freeze
+        run: |
+          cabal freeze
+
+      - name: Cabal Restore Cache
+        uses: actions/cache/restore@v5
+        with:
+          key: ${{ runner.os }}-9.14.1-${{ hashFiles('cabal.project.freeze') }}
+          path: |
+            dist-newstyle
+            ${{ steps.haskell.outputs.cabal-store }}
+
+      - name: Tag vs Version Test
+        run: |
+          if [ "${{ github.ref }}" != "refs/tags/release-v${{ needs.test.outputs.package_version }}" ]; then
+            echo "Error: tag version (${{ github.ref }}) doesn't match package version ${{ needs.test.outputs.package_version }}"
+            exit 1
+          fi
+
+      - name: Cabal Upload Candidate
+        run: |
+          mkdir doc
+          cabal sdist
+          cabal haddock --builddir=doc --haddock-for-hackage --haddock-internal --enable-doc
+          cabal upload -t${{ secrets.HACKAGE_AUTH_KEY }} dist-newstyle/sdist/*.tar.gz
+          cabal upload -d -t${{ secrets.HACKAGE_AUTH_KEY }} doc/*-docs.tar.gz

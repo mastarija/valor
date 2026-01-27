@@ -1,26 +1,26 @@
 {-# LANGUAGE TypeApplications #-}
---
+{-# LANGUAGE PartialTypeSignatures #-}
+
 module Data.ValorSpec where
---
+
 import Prelude hiding ( fail )
---
-import Data.Valor ( pass , fail , test , make , peek , poke , nerf , peer , adapt , check1 , checkN , validateP )
-import Data.Valor.Internal ( Valid (..) , unValid , Wrong (..) , unValor )
---
+
 import Data.Bool ( bool )
 import Data.Functor.Identity ( Identity (..) )
 import Data.Bifunctor ( bimap )
---
-import Test.Gen ( genSmallInt , genSmallString , genPredicateInt , genSmallList )
 import Test.Hspec ( Spec , it , describe , shouldBe )
 import Test.QuickCheck ( property , elements )
---
+import Unsafe.Coerce ( unsafeCoerce )
+
+import Data.Valor ( Valid , unValid , pass , fail , test , make , peek , poke , nerf , peer , adapt , check1 , checkN , validateP )
+
+import Test.Gen ( genSmallInt , genSmallString , genPredicateInt , genSmallList )
+
 
 newtype TestType a = TestType
   { unTestType :: a
   } deriving ( Eq , Show )
 
---
 
 spec :: Spec
 spec = do
@@ -29,7 +29,7 @@ spec = do
       it "pass : should always pass" $ property $ \ i ->
         shouldBe
           ( validateP ( pass @Identity @String ) ( i :: String ) )
-          ( Left $ Valid i )
+          ( validateP ( pure i ) i )
 
       it "fail : should always fail" $ property $ \ e i ->
         shouldBe
@@ -83,14 +83,14 @@ spec = do
       it "nerf : should neutralize a failing validator" $ property $ do
         i <- genSmallInt
         e <- genSmallString
-        pure $ ( validateP ( nerf $ fail e ) i ) == ( Left $ Valid i )
+        pure $ ( validateP ( nerf $ fail e ) i ) == ( validateP ( pure e ) i )
 
       it "peer : should convert neutral to Nothing and error to Maybe" $ property $ do
         i <- genSmallInt
         e <- genSmallString
         p <- genPredicateInt
         t <- pure $ peer $ test ( fail e ) pass ( pure . p )
-        pure $ ( runIdentity $ unValor t i ) == bool ( Wrong $ Just e ) ( Inert $ Nothing ) ( p i )
+        pure $ ( validateP t i ) == bool ( validateP ( fail $ Just e ) i ) ( validateP ( pure Nothing ) i ) ( p i )
 
       it "adapt : should make validator work with a different input type" $ property $ do
         i <- genSmallInt
@@ -99,7 +99,7 @@ spec = do
         pure $
           ( validateP ( adapt unTestType v ) ( TestType i ) )
           ==
-          ( bimap ( Valid . TestType . unValid ) id $ validateP v i )
+          ( bimap ( ( unsafeCoerce @( TestType Int ) @( Valid ( TestType Int ) ) ) . TestType . unValid ) id $ validateP v i )
 
       it "check1 : should adapt validator to different input and result in a maybe error" $ property $ do
         i <- fmap TestType genSmallInt
@@ -107,9 +107,9 @@ spec = do
         p <- genPredicateInt
         t <- pure $ check1 unTestType $ test ( fail e ) pass ( pure . p )
         pure $
-          ( runIdentity $ unValor t i )
+          ( validateP t i )
           ==
-          ( bool ( Wrong $ Just e ) ( Inert $ Nothing ) ( p $ unTestType i ) )
+          ( bool ( validateP ( fail $ Just e ) i ) ( validateP ( pure Nothing ) i ) ( p $ unTestType i ) )
 
       it "checkN : applies validator to a list of items and results in Just [ Maybe e ] if there's even a single error, Nothing otherwise" $ property $ do
         is <- genSmallList genSmallInt
@@ -119,6 +119,6 @@ spec = do
         cs <- pure $ fmap p is
         es <- pure $ fmap ( bool ( Just e ) ( Nothing ) ) cs
         pure $
-          ( runIdentity $ unValor t ( TestType is ) )
+          ( validateP t ( TestType is ) )
           ==
-          ( bool ( Wrong $ Just es ) ( Inert $ Nothing ) ( and cs ) )
+          ( bool ( validateP ( fail $ Just es ) ( TestType is ) ) ( validateP ( pure Nothing ) ( TestType is ) ) ( and cs ) )

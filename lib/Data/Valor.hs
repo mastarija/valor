@@ -1,3 +1,5 @@
+{-# LANGUAGE PackageImports #-}
+
 {- |
   The idea behind Valor is to provide a simple but powerful data validation
   library that is easy to understand quickly.
@@ -61,13 +63,16 @@ module Data.Valor
     -- $tutorial
   )
   where
---
+
 import Prelude hiding ( fail )
---
+
 import Data.Bool ( bool )
-import Data.Valor.Internal ( Valid (..) , unValid , Valor (..) , Wrong (..) , altW , accW , valW , wrong , isInert )
+import Data.Functor ( (<&>) )
 import Data.Functor.Identity ( Identity (..) )
---
+import Control.Monad ( (>=>) )
+
+import Data.Valor.Internal ( Valid (..) , Valor (..) , Wrong (..) , unValid , altW , accW , valW , wrong , isInert )
+
 
 {- |
   An alias for 'mappend' (<>).
@@ -82,27 +87,27 @@ app :: Monad m => Valor i m (a -> b) -> Valor i m a -> Valor i m b
 app = (<*>)
 
 {- |
-  As an alternative to the 'Alternative' type class and the '<|>' operator 'alt'
-  is provided. It will result in an error only if both arguments are
-  'Wrong.Wrong', however, only the last error will be returned.
+  As an alternative to the 'Control.Applicative.Alternative' type class and the
+  'Control.Applicative.<|>' operator 'alt' is provided. It will result in an
+  error only if both arguments are v'Wrong', however, only the last error will
+  be returned.
 -}
 alt :: Monad m => Valor i m e -> Valor i m e -> Valor i m e
-alt ( Valor b ) ( Valor d ) = Valor $ \ i -> altW <$> ( b i ) <*> ( d i )
+alt ( Valor b ) ( Valor d ) = Valor $ \ i -> altW <$> b i <*> d i
 
 {- |
-  Accumulating version of 'alt' where if both operands are 'Wrong.Wrong' they
+  Accumulating version of 'alt' where if both operands are v'Wrong' they
   will be 'mappend'ed.
 -}
 acc :: ( Monad m , Semigroup e ) => Valor i m e -> Valor i m e -> Valor i m e
-acc ( Valor b ) ( Valor d ) = Valor $ \ i -> accW <$> ( b i ) <*> ( d i )
+acc ( Valor b ) ( Valor d ) = Valor $ \ i -> accW <$> b i <*> d i
 
---
 
 {- |
   A validator that always 'pass'es the test. Essentially just an alias for
-  'mempty'. If you want to create a validator that always passes for a type that
-  isn't a 'Monoid', then you can use 'pure', however you will have to provide it
-  a "dummy" error value that you yourself will manage as "neutral".
+  'mempty'. If you want to create a validator that always passes for a type
+  that isn't a 'Monoid', then you can use 'pure', however you will have to
+  provide it a "dummy" error value that you yourself will manage as "neutral".
 
   ==== __Example__
 
@@ -163,9 +168,8 @@ failIf e p = failIfM e ( pure . p )
   A monadic version of 'failIf'.
 -}
 failIfM :: ( Monad m , Monoid e ) => e -> ( i -> m Bool ) -> Valor i m e
-failIfM e p = test pass ( fail e ) p
+failIfM = test pass . fail
 
---
 
 {- |
   Apply one or the other validator depending on the result of a test.
@@ -233,8 +237,8 @@ peek :: ( Monad m , Semigroup e ) => Valor i m e -> Valor i m e -> Valor i m e -
 peek ( Valor f ) ( Valor p ) ( Valor t ) = Valor $ \ i -> t i >>= wrong ( const $ f i ) ( const $ p i )
 
 {- |
-  Just like 'peek', except if both the "test" and the "fail" validators fail,
-  their results are 'mappend'ed ('<>').
+  Just like 'peek', except if both the "test" and the
+  "fail" validators fail, their results are 'mappend'ed ('<>').
 
   ==== __Example__
 
@@ -266,10 +270,9 @@ poke ( Valor f ) ( Valor p ) ( Valor t ) = Valor $ \ i -> do
         Inert e -> Inert e
         Wrong d -> Wrong $ b <> d
 
---
 
 {- |
-  If a validator fails with an error 'nerf' will make that error 'Wrong.Inert'
+  If a validator fails with an error 'nerf' will make that error 'Inert'
   essentially making it pass.
 
   Use of this function is discouraged, however it might come in handy in
@@ -285,14 +288,16 @@ poke ( Valor f ) ( Valor p ) ( Valor t ) = Valor $ \ i -> do
   Left (Valid 0)
 -}
 nerf :: Monad m => Valor i m e -> Valor i m e
-nerf ( Valor v ) = Valor $ \ i -> v i >>= pure . Inert . valW
+nerf ( Valor v ) = Valor $ v >=> pure . Inert . valW
 
 {- |
-  Allows you to 'peer' into the 'Wrong' contained within the 'Valor' (how
-  poetic) and if there is nothing 'Wrong.Wrong' it will return 'Nothing'.
+  Allows you to 'peer' into the t'Wrong' contained within the t'Valor' (how
+  poetic) and if there is nothing v'Wrong' it will
+  return 'Nothing'.
 
   It might be useful in the 'Monad'ic context to know if the validator has
-  failed (in which case @'Just' e@ is returned) or if it has succeeded.
+  failed (in which case @'Just' e@ is returned) or if it
+  has succeeded.
 
   ==== __Example__
 
@@ -311,9 +316,8 @@ nerf ( Valor v ) = Valor $ \ i -> v i >>= pure . Inert . valW
   Right "I'm less than 3"
 -}
 peer :: Monad m => Valor i m e -> Valor i m ( Maybe e )
-peer ( Valor v ) = Valor $ \ i -> v i >>= pure . wrong ( Wrong . Just ) ( const $ Inert Nothing )
+peer ( Valor v ) = Valor $ v >=> pure . wrong ( Wrong . Just ) ( const $ Inert Nothing )
 
---
 
 {- |
   It can 'adapt' a validator to the new input type given a conversion function,
@@ -321,7 +325,7 @@ peer ( Valor v ) = Valor $ \ i -> v i >>= pure . wrong ( Wrong . Just ) ( const 
 
   This is essentially a 'Data.Functor.Contravariant.contramap' from
   "Data.Functor.Contravariant", however, due to the placement of arguments in
-  the 'Valor' type constructor it is not possible to write that instance.
+  the t'Valor' type constructor it is not possible to write that instance.
 
   ==== __Example__
 
@@ -338,8 +342,8 @@ adapt s ( Valor v ) = Valor $ v . s
 
 {- |
   Useful for constructing structured errors / error records. By using 'Maybe'
-  you can specify for which exact field an error has occurred. It is implemented
-  using 'peer' and 'adapt'.
+  you can specify for which exact field an error has occurred. It is
+  implemented using 'peer' and 'adapt'.
 
   ==== __Example__
 
@@ -391,14 +395,13 @@ checkN :: ( Monad m , Traversable t ) => ( i -> t x ) -> Valor x m e -> Valor i 
 checkN s v = Valor $ \ i -> do
   ws <- traverse ( unValor $ peer v ) ( s i )
   pure $ if all isInert ws
-    then Inert $ Nothing
+    then Inert Nothing
     else Wrong $ Just $ fmap valW ws
 
---
 
 {- |
-  Runs a validator within the 'Identity' 'Monad', essentially making it a "pure"
-  validation.
+  Runs a validator within the t'Identity' 'Monad', essentially making it a
+  "pure" validation.
 -}
 validateP :: Valor i Identity e -> i -> Either ( Valid i ) e
 validateP v = runIdentity . validateM v
@@ -420,9 +423,8 @@ validateP v = runIdentity . validateM v
   Left (Valid 5)
 -}
 validateM :: Monad m => Valor i m e -> i -> m ( Either ( Valid i ) e )
-validateM ( Valor v ) i = v i >>= pure . wrong Right ( const $ Left $ Valid i )
+validateM ( Valor v ) i = v i <&> wrong Right ( const $ Left $ Valid i )
 
---
 
 {- $tutorial
 
@@ -512,7 +514,7 @@ validateM ( Valor v ) i = v i >>= pure . wrong Right ( const $ Left $ Valid i )
   Now we can work on constructing our validator. If we want our applicants to be
   over 18 years old we can write @'passIf' \[AgeUnder\] (>18)@. Similarly, we
   can restrict the age to under 65 by writing @'failIf' \[AgeOver\] (>65)@.
-  Because 'Valor' is a 'Monoid' we can combine two validators into one like
+  Because t'Valor' is a 'Monoid' we can combine two validators into one like
   this:
 
   >>> :{
@@ -675,8 +677,8 @@ validateM ( Valor v ) i = v i >>= pure . wrong Right ( const $ Left $ Valid i )
 
   == Usage examples
 
-  Now we can create some test data and check out our validation results. Here is
-  our \"database\":
+  Now we can create some test data and check out our validation results. Here
+  is our \"database\":
 
   >>> :{
     state :: State

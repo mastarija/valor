@@ -1,7 +1,7 @@
 cabal-version       : 3.0
 
 name                : valor
-version             : 1.0.0.0
+version             : 1.0.0.1
 build-type          : Simple
 
 category            : Validation
@@ -28,31 +28,27 @@ source-repository head
 
 common core
   ghc-options       : -Wall
-  build-depends     : base >= 4.0 && <5
+  build-depends     : base >=4.0 && <5
   default-language  : Haskell2010
 
 library
   import            : core
-  hs-source-dirs    : lib
+  hs-source-dirs    : lib , int 
   exposed-modules   : Data.Valor
-  build-depends     : int
-
-library int
-  import            : core
-  hs-source-dirs    : int
-  exposed-modules   : Data.Valor.Internal
+  other-modules     : Data.Valor.Internal
 
 test-suite spec
   import            : core
 
   main-is           : Spec.hs
-  hs-source-dirs    : tst
+  hs-source-dirs    : tst , int
   other-modules     : Test.Gen
+                    , Test.Gen.Wrong
                     , Data.ValorSpec
+                    , Data.Valor.Internal
                     , Data.Valor.InternalSpec
 
-  build-depends     : int
-                    , valor
+  build-depends     : valor
                     , hspec
                     , QuickCheck
 
